@@ -1,0 +1,195 @@
+---
+title: Browser
+description: Browser-specific features and APIs for NEAR API TypeScript
+---
+
+## Overview
+
+The browser entry point provides IndexedDB-based key storage for web applications. It includes all universal features plus browser-specific key management capabilities.
+
+## Installation
+
+```bash
+npm install near-api-ts
+```
+
+## Import Paths
+
+### Automatic (Recommended)
+
+The package automatically resolves to the browser build when imported in browser environments:
+
+```typescript
+import { createTestnetClient, createIdbKeyService } from 'near-api-ts';
+```
+
+### Explicit
+
+You can explicitly import the browser version:
+
+```typescript
+import { createTestnetClient, createIdbKeyService } from 'near-api-ts/browser';
+```
+
+## Browser-Specific Features
+
+### IndexedDB Key Service
+
+The browser build includes `createIdbKeyService` for secure key storage using the browser's IndexedDB API.
+
+#### Creating an IDB Key Service
+
+```typescript
+import { createIdbKeyService, safeCreateIdbKeyService } from 'near-api-ts';
+
+// Throwable version (throws on error)
+const keyService = createIdbKeyService({
+  idbName: 'my-near-wallet', // Optional, defaults to 'near-api-ts'
+});
+
+// Safe version (returns Result type)
+const result = safeCreateIdbKeyService({
+  idbName: 'my-near-wallet',
+});
+
+if (result.ok) {
+  const keyService = result.value;
+}
+```
+
+#### API Methods
+
+The IDB key service provides the following methods:
+
+```typescript
+// Add a key to IndexedDB
+await keyService.addKey({
+  privateKey: 'ed25519:5J9...', // Private key in string format
+});
+
+// Check if a key exists
+const exists = await keyService.hasKey(publicKey);
+
+// Remove a specific key
+await keyService.removeKey(publicKey);
+
+// Clear all keys
+await keyService.clear();
+
+// Sign a transaction
+const signedTx = await keyService.signTransaction({
+  transaction,
+  publicKey,
+});
+```
+
+#### IndexedDB Structure
+
+The service creates an IndexedDB database with:
+- **Database name**: Configurable via `idbName` (default: `'near-api-ts'`)
+- **Object store**: `'keyPairs'`
+- **Key**: Public key (string)
+- **Value**: Private key (string)
+
+#### Security Considerations
+
+- Keys are stored in IndexedDB, which is origin-scoped
+- Private keys are accessible only to scripts from the same origin
+- File permissions are set to `0o600` on the server side equivalent
+- Consider using additional encryption for sensitive applications
+
+## Complete Browser Example
+
+```typescript
+import {
+  createTestnetClient,
+  createIdbKeyService,
+  createMemorySigner,
+  transfer,
+  near,
+  randomEd25519KeyPair,
+} from 'near-api-ts';
+
+// Initialize client
+const client = createTestnetClient();
+
+// Create IDB key service
+const keyService = createIdbKeyService();
+
+// Generate a new key pair
+const keyPair = randomEd25519KeyPair();
+
+// Store the key in IndexedDB
+await keyService.addKey({
+  privateKey: keyPair.privateKey,
+});
+
+// Create a signer
+const signer = createMemorySigner({
+  signerAccountId: 'myaccount.testnet',
+  client,
+  keyService,
+});
+
+// Execute a transaction
+const result = await signer.executeTransaction({
+  intent: {
+    action: transfer({ amount: near('1') }),
+    receiverAccountId: 'receiver.testnet',
+  },
+});
+
+console.log('Transaction hash:', result.transactionHash);
+```
+
+## Browser Compatibility
+
+The browser build requires:
+- Modern browser with ES2020+ support
+- IndexedDB API support (all modern browsers)
+- WebCrypto API support
+
+## Available Exports
+
+The browser entry point exports:
+
+### Browser-Specific
+- `createIdbKeyService` - Create IndexedDB key service (throwable)
+- `safeCreateIdbKeyService` - Create IndexedDB key service (safe)
+
+### Universal Features
+All exports from the [universal](/platform/universal) module:
+- Client creation functions
+- Memory key service
+- Memory signer
+- Action creators
+- Token and gas helpers
+- Key pair utilities
+- Error handling
+- Type definitions
+
+## Migration from Near-API-JS
+
+If you're migrating from `near-api-js`:
+
+```typescript
+// Old (near-api-js)
+import { keyStores } from 'near-api-js';
+const keyStore = new keyStores.BrowserLocalStorageKeyStore();
+
+// New (near-api-ts)
+import { createIdbKeyService } from 'near-api-ts';
+const keyService = createIdbKeyService();
+```
+
+Key differences:
+- Uses IndexedDB instead of localStorage for better performance
+- Async API for all operations
+- Result/Error pattern for better error handling
+- TypeScript-first design
+
+## See Also
+
+- [Node.js Platform](/platform/nodejs) - File-based key storage for Node.js
+- [Universal Platform](/platform/universal) - Cross-platform features
+- [Key Services](/concepts/key-services) - Key service concepts and patterns

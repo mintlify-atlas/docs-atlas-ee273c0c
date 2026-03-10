@@ -1,0 +1,130 @@
+---
+title: "Introduction"
+description: "TypeScript library for interactions with NEAR Protocol in the browser or Node.js"
+---
+
+## Welcome to NEAR API TypeScript
+
+NEAR API TypeScript is a modern, type-safe library for building applications on the NEAR Protocol blockchain. Built from the ground up with TypeScript, it provides a robust and developer-friendly interface for interacting with NEAR Protocol in both browser and Node.js environments.
+
+<CardGroup cols={2}>
+  <Card title="Quick Start" icon="rocket" href="/quickstart">
+    Get up and running in minutes with our quickstart guide
+  </Card>
+  <Card title="Installation" icon="download" href="/installation">
+    Install the library using your preferred package manager
+  </Card>
+  <Card title="Core Concepts" icon="book" href="/core-concepts/clients">
+    Learn the fundamental concepts behind the library
+  </Card>
+  <Card title="API Reference" icon="code" href="/api/client/overview">
+    Explore the complete API documentation
+  </Card>
+</CardGroup>
+
+## Key Features
+
+<CardGroup cols={2}>
+  <Card title="Type-Safe" icon="shield-check">
+    Full TypeScript support with comprehensive type definitions for all API methods
+  </Card>
+  <Card title="Multi-Platform" icon="browser">
+    Works seamlessly in browser, Node.js, and universal environments
+  </Card>
+  <Card title="Flexible Error Handling" icon="triangle-exclamation">
+    Choose between safe (Result-based) and throwable API variants
+  </Card>
+  <Card title="Key Management" icon="key">
+    Built-in key services with support for memory, file, and IndexedDB storage
+  </Card>
+  <Card title="Transaction Building" icon="file-signature">
+    Comprehensive transaction builder with action creators
+  </Card>
+  <Card title="Native Token Support" icon="coins">
+    First-class support for NEAR tokens and gas units with type-safe helpers
+  </Card>
+</CardGroup>
+
+## Why NEAR API TypeScript?
+
+### Modern TypeScript-First Design
+
+Built with modern TypeScript practices, providing excellent IDE support, autocompletion, and compile-time type checking. Every function and type is fully documented with JSDoc comments.
+
+### Flexible Error Handling
+
+Choose the error handling approach that fits your needs:
+- **Throwable variants**: Standard async functions that throw errors
+- **Safe variants**: Return `Result<T, E>` objects for functional error handling
+
+### Multi-Platform Support
+
+Write once, run anywhere. The library automatically detects your environment and uses the appropriate implementation:
+- **Universal**: Core functionality that works everywhere
+- **Browser**: Browser-specific features like IndexedDB key storage
+- **Node.js**: Node-specific features like file-based key storage
+
+## Quick Example
+
+```typescript
+import {
+  createTestnetClient,
+  createMemoryKeyService,
+  createMemorySigner,
+  transfer,
+  near,
+} from 'near-api-ts';
+
+// Create a client
+const client = createTestnetClient();
+
+// Query account information
+const { accountInfo } = await client.getAccountInfo({
+  accountId: 'testnet',
+  atMomentOf: 'LatestFinalBlock',
+});
+
+console.log('Balance:', accountInfo.balance.total.near);
+
+// Set up signing with a key service
+const keyService = createMemoryKeyService({
+  keySource: { privateKey: 'ed25519:your-private-key' },
+});
+
+const signer = createMemorySigner({
+  signerAccountId: 'your-account.testnet',
+  client,
+  keyService,
+});
+
+// Send a transaction
+await signer.executeTransaction({
+  intent: {
+    action: transfer({ amount: near('1') }),
+    receiverAccountId: 'receiver.testnet',
+  },
+});
+```
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Install the Library" icon="download" href="/installation">
+    Learn how to install NEAR API TypeScript in your project
+  </Card>
+  <Card title="Follow the Quickstart" icon="bolt" href="/quickstart">
+    Build your first NEAR application in 5 minutes
+  </Card>
+  <Card title="Understand Clients" icon="server" href="/core-concepts/clients">
+    Learn about RPC clients and network connections
+  </Card>
+  <Card title="Explore Examples" icon="code" href="/guides/reading-blockchain-data">
+    See real-world usage examples and patterns
+  </Card>
+</CardGroup>
+
+## Community and Support
+
+- **GitHub**: [near/near-api-ts](https://github.com/near/near-api-ts)
+- **Issues**: Report bugs or request features on [GitHub Issues](https://github.com/near/near-api-ts/issues)
+- **License**: MIT

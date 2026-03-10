@@ -1,0 +1,363 @@
+---
+title: 'deleteAccount'
+description: 'Delete a NEAR account and transfer remaining balance'
+---
+
+## Overview
+
+The `deleteAccount` action permanently deletes a NEAR account and transfers its remaining balance to a beneficiary account. This action is irreversible.
+
+## Signature
+
+```typescript
+deleteAccount(args: {
+  beneficiaryAccountId: string
+}): DeleteAccountAction
+```
+
+## Parameters
+
+<ParamField path="beneficiaryAccountId" type="string" required>
+  The account ID that will receive the remaining balance from the deleted account
+</ParamField>
+
+## Returns
+
+A `DeleteAccountAction` object:
+
+```typescript
+{
+  actionType: 'DeleteAccount',
+  beneficiaryAccountId: string
+}
+```
+
+## Basic Example
+
+```typescript
+import { deleteAccount } from '@near-api-ts/universal';
+
+const action = deleteAccount({
+  beneficiaryAccountId: 'alice.near'
+});
+
+await signer.executeTransaction({
+  intent: {
+    receiverAccountId: 'temp.alice.near', // Account to delete
+    action
+  }
+});
+
+console.log('Account deleted successfully');
+```
+
+<Warning>
+**This action is IRREVERSIBLE.** Once an account is deleted:
+- The account name becomes available for re-registration
+- All access keys are removed
+- The account cannot sign transactions
+- All remaining balance is transferred to the beneficiary
+</Warning>
+
+## Delete Temporary Account
+
+```typescript
+import { deleteAccount } from '@near-api-ts/universal';
+
+// Delete a temporary account created for testing
+await signer.executeTransaction({
+  intent: {
+    receiverAccountId: 'test-123.alice.near',
+    action: deleteAccount({
+      beneficiaryAccountId: 'alice.near'
+    })
+  }
+});
+```
+
+## Delete with Key Cleanup
+
+```typescript
+import { 
+  deleteKey,
+  deleteAccount
+} from '@near-api-ts/universal';
+
+// Get all keys except the signing key
+const keys = await client.getAccessKeys({
+  accountId: 'temp.alice.near'
+});
+
+const otherKeys = keys
+  .map(k => k.publicKey)
+  .filter(pk => pk !== signerPublicKey);
+
+// Delete other keys first, then delete account
+await signer.executeTransaction({
+  intent: {
+    receiverAccountId: 'temp.alice.near',
+    actions: [
+      ...otherKeys.map(pk => deleteKey({ publicKey: pk })),
+      deleteAccount({ beneficiaryAccountId: 'alice.near' })
+    ]
+  }
+});
+```
+
+## Cleanup After Test
+
+```typescript
+import { deleteAccount } from '@near-api-ts/universal';
+
+async function cleanupTestAccounts(parentAccount: string) {
+  const testAccounts = [
+    'test-1',
+    'test-2',
+    'test-3'
+  ];
+  
+  for (const name of testAccounts) {
+    const accountId = `${name}.${parentAccount}`;
+    
+    try {
+      await signer.executeTransaction({
+        intent: {
+          receiverAccountId: accountId,
+          action: deleteAccount({ 
+            beneficiaryAccountId: parentAccount 
+          })
+        }
+      });
+      console.log(`Deleted ${accountId}`);
+    } catch (error) {
+      console.error(`Failed to delete ${accountId}:`, error);
+    }
+  }
+}
+
+await cleanupTestAccounts('alice.near');
+```
+
+## Delete Contract Account
+
+```typescript
+import { deleteAccount } from '@near-api-ts/universal';
+
+// Delete a contract account and recover storage costs
+await signer.executeTransaction({
+  intent: {
+    receiverAccountId: 'old-contract.alice.near',
+    action: deleteAccount({
+      beneficiaryAccountId: 'alice.near'
+    })
+  }
+});
+
+console.log('Contract account deleted, balance recovered');
+```
+
+<Info>
+Deleting a contract account with stored state will transfer the storage costs back to the beneficiary. This can be useful for recovering NEAR locked in storage.
+</Info>
+
+## Conditional Deletion
+
+```typescript
+import { deleteAccount } from '@near-api-ts/universal';
+
+// Check account state before deletion
+const accountInfo = await client.getAccountInfo({
+  accountId: 'temp.alice.near'
+});
+
+const balanceInNear = Number(accountInfo.amount) / 1e24;
+
+if (balanceInNear < 0.01) {
+  // Safe to delete - minimal balance
+  await signer.executeTransaction({
+    intent: {
+      receiverAccountId: 'temp.alice.near',
+      action: deleteAccount({ 
+        beneficiaryAccountId: 'alice.near' 
+      })
+    }
+  });
+} else {
+  console.log('Account has significant balance, skipping deletion');
+}
+```
+
+## Error Handling
+
+```typescript
+import { deleteAccount, isNatError } from '@near-api-ts/universal';
+
+try {
+  await signer.executeTransaction({
+    intent: {
+      receiverAccountId: 'temp.alice.near',
+      action: deleteAccount({ 
+        beneficiaryAccountId: 'alice.near' 
+      })
+    }
+  });
+  
+  console.log('Account deleted successfully');
+} catch (error) {
+  if (isNatError(error)) {
+    if (error.kind === 'CreateAction.DeleteAccount.Args.InvalidSchema') {
+      console.error('Invalid beneficiary account ID');
+    } else if (error.kind === 'MemorySigner.ExecuteTransaction.Rpc.Transaction.Receiver.NotFound') {
+      console.error('Account to delete does not exist');
+    }
+  }
+}
+```
+
+## Safe Variant
+
+```typescript
+import { safeDeleteAccount } from '@near-api-ts/universal';
+
+const actionResult = safeDeleteAccount({ 
+  beneficiaryAccountId: 'alice.near' 
+});
+
+if (!actionResult.ok) {
+  console.error('Invalid delete account action:', actionResult.error.kind);
+  return;
+}
+
+const result = await signer.safeExecuteTransaction({
+  intent: {
+    receiverAccountId: 'temp.alice.near',
+    action: actionResult.value
+  }
+});
+
+if (result.ok) {
+  console.log('Account deleted:', result.value.transactionHash);
+} else {
+  console.error('Deletion failed:', result.error.kind);
+}
+```
+
+## With Confirmation
+
+```typescript
+import { deleteAccount } from '@near-api-ts/universal';
+
+async function deleteAccountWithConfirmation(
+  accountToDelete: string,
+  beneficiary: string
+) {
+  const confirm = await promptUser(
+    `Are you sure you want to delete ${accountToDelete}? This cannot be undone. (yes/no)`
+  );
+  
+  if (confirm.toLowerCase() !== 'yes') {
+    console.log('Deletion cancelled');
+    return;
+  }
+  
+  // Get account info to show balance
+  const accountInfo = await client.getAccountInfo({
+    accountId: accountToDelete
+  });
+  
+  const balanceInNear = Number(accountInfo.amount) / 1e24;
+  console.log(`Account balance: ${balanceInNear} NEAR`);
+  console.log(`Balance will be transferred to: ${beneficiary}`);
+  
+  const finalConfirm = await promptUser('Proceed? (yes/no)');
+  
+  if (finalConfirm.toLowerCase() !== 'yes') {
+    console.log('Deletion cancelled');
+    return;
+  }
+  
+  await signer.executeTransaction({
+    intent: {
+      receiverAccountId: accountToDelete,
+      action: deleteAccount({ beneficiaryAccountId: beneficiary })
+    }
+  });
+  
+  console.log('Account deleted successfully');
+}
+```
+
+## Common Errors
+
+- `CreateAction.DeleteAccount.Args.InvalidSchema` - Invalid beneficiary account ID format
+- `CreateAction.DeleteAccount.Internal` - Internal error
+- `MemorySigner.ExecuteTransaction.Rpc.Transaction.Receiver.NotFound` - Account to delete doesn't exist
+- Beneficiary account doesn't exist - Beneficiary must exist before deletion
+- Cannot delete account with active contract - Some contract states may prevent deletion
+
+## Important Notes
+
+<Warning>
+**Account Deletion is Permanent:**
+- The account name becomes available for anyone to register
+- All data and state are destroyed
+- Access keys become useless
+- Cannot be recovered or undone
+</Warning>
+
+<Info>
+**Balance Transfer:**
+- All remaining NEAR balance is transferred to the beneficiary
+- This includes storage staking refunds
+- Gas costs for the transaction are deducted first
+</Info>
+
+<Note>
+**Name Availability:**
+After deletion, the account name can be registered by anyone. If you want to reserve it, you need to re-create it immediately or use a different strategy.
+</Note>
+
+## Best Practices
+
+<Check>
+**DO:**
+- Verify the beneficiary account exists
+- Check the account balance before deletion
+- Use confirmation prompts in user-facing applications
+- Clean up access keys if needed
+- Test on testnet first
+- Document why accounts are being deleted
+</Check>
+
+<Warning>
+**DON'T:**
+- Don't delete accounts without user confirmation
+- Don't use non-existent beneficiaries
+- Don't delete accounts with significant balances accidentally
+- Don't forget that deletion is irreversible
+- Don't delete parent accounts if subaccounts still exist
+</Warning>
+
+## Use Cases
+
+1. **Temporary Accounts**: Delete test or temporary accounts after use
+2. **Storage Recovery**: Recover NEAR locked in storage by deleting unused accounts
+3. **Account Migration**: Delete old accounts after migrating to new ones
+4. **Cleanup**: Remove unused subaccounts to reduce maintenance
+5. **Testing**: Clean up after integration tests
+
+## Alternatives to Deletion
+
+Before deleting, consider:
+
+1. **Transfer Ownership**: Transfer access keys instead of deleting
+2. **Remove Keys**: Delete access keys but keep the account
+3. **Archive**: Keep the account but transfer out the balance
+4. **Rename Strategy**: Use subaccounts instead of top-level accounts
+
+## See Also
+
+- [executeTransaction](/api/signers/execute-transaction) - Execute transactions
+- [deleteKey](/api/actions/delete-key) - Remove access keys
+- [transfer](/api/actions/transfer) - Transfer balances
+- [createAccount](/api/actions/create-account) - Create accounts

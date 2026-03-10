@@ -1,0 +1,597 @@
+---
+title: Sending Transactions
+description: Learn how to create, sign, and send transactions on the NEAR blockchain
+---
+
+This guide covers everything you need to know about sending transactions on NEAR, from simple transfers to complex multi-action transactions.
+
+## Prerequisites
+
+Install the NEAR API TypeScript library:
+
+```bash
+npm install near-api-ts
+```
+
+## Overview
+
+Sending transactions on NEAR involves three main steps:
+
+1. **Create a signer** - Manages your keys and signs transactions
+2. **Define actions** - Specify what the transaction should do
+3. **Execute the transaction** - Send it to the network
+
+## Setting Up a Signer
+
+A signer handles transaction signing using your private keys. The library provides `MemorySigner` for most use cases.
+
+<Steps>
+  <Step title="Create a client">
+    ```typescript
+    import { createTestnetClient } from 'near-api-ts';
+
+    const client = createTestnetClient();
+    ```
+  </Step>
+
+  <Step title="Create a key service">
+    ```typescript
+    import { createMemoryKeyService } from 'near-api-ts';
+
+    const keyService = createMemoryKeyService({
+      keySource: {
+        privateKey: 'ed25519:your-private-key-here'
+      }
+    });
+    ```
+  </Step>
+
+  <Step title="Create the signer">
+    ```typescript
+    import { createMemorySigner } from 'near-api-ts';
+
+    const signer = createMemorySigner({
+      signerAccountId: 'your-account.testnet',
+      client,
+      keyService
+    });
+    ```
+  </Step>
+</Steps>
+
+## Sending NEAR Tokens
+
+### Simple Transfer
+
+The most common transaction is transferring NEAR tokens:
+
+```typescript
+import { createTestnetClient, createMemoryKeyService, createMemorySigner, transfer, near } from 'near-api-ts';
+
+const client = createTestnetClient();
+const keyService = createMemoryKeyService({
+  keySource: { privateKey: 'ed25519:your-private-key' }
+});
+const signer = createMemorySigner({
+  signerAccountId: 'sender.testnet',
+  client,
+  keyService
+});
+
+// Transfer 1 NEAR
+const result = await signer.executeTransaction({
+  intent: {
+    action: transfer({ amount: near('1') }),
+    receiverAccountId: 'receiver.testnet'
+  }
+});
+
+console.log('Transaction hash:', result.transactionOutcome.id);
+console.log('Status:', result.transactionOutcome.outcome.status);
+```
+
+### Transfer with YoctoNEAR
+
+You can also specify amounts in yoctoNEAR (1 NEAR = 10²⁴ yoctoNEAR):
+
+```typescript
+import { transfer, yoctoNear } from 'near-api-ts';
+
+// Transfer exactly 1,000,000 yoctoNEAR
+await signer.executeTransaction({
+  intent: {
+    action: transfer({ amount: yoctoNear('1000000') }),
+    receiverAccountId: 'receiver.testnet'
+  }
+});
+
+// Or use the object syntax
+await signer.executeTransaction({
+  intent: {
+    action: transfer({ amount: { yoctoNear: '1000000' } }),
+    receiverAccountId: 'receiver.testnet'
+  }
+});
+```
+
+### Working with NEAR Tokens
+
+The `NearToken` type provides methods for token arithmetic:
+
+```typescript
+import { near, transfer } from 'near-api-ts';
+
+// Create token amounts
+const amount1 = near('5');
+const amount2 = near('2.5');
+
+// Perform arithmetic
+const total = amount1.add(amount2);  // 7.5 NEAR
+const remaining = amount1.sub(amount2);  // 2.5 NEAR
+
+// Comparisons
+if (amount1.gt(amount2)) {
+  console.log('amount1 is greater');
+}
+
+// Access values
+console.log('NEAR:', total.near);  // 7.5
+console.log('YoctoNEAR:', total.yoctoNear);  // 7500000000000000000000000
+
+// Use in transfer
+await signer.executeTransaction({
+  intent: {
+    action: transfer({ amount: total }),
+    receiverAccountId: 'receiver.testnet'
+  }
+});
+```
+
+## Transaction Error Handling
+
+### Using Try-Catch
+
+Handle errors with standard try-catch:
+
+```typescript
+import { isNatError, transfer, near } from 'near-api-ts';
+
+try {
+  await signer.executeTransaction({
+    intent: {
+      action: transfer({ amount: near('1000') }),
+      receiverAccountId: 'receiver.testnet'
+    }
+  });
+  console.log('Transfer successful');
+} catch (error) {
+  if (isNatError(error, 'MemorySigner.ExecuteTransaction.Rpc.Transaction.Signer.Balance.TooLow')) {
+    console.log('Insufficient balance');
+    console.log('Required:', error.context.transactionCost);
+  } else if (isNatError(error, 'MemorySigner.ExecuteTransaction.Rpc.Account.NotFound')) {
+    console.log('Receiver account does not exist');
+  } else {
+    console.error('Transaction failed:', error.kind);
+  }
+}
+```
+
+### Using Safe Variants
+
+For more explicit error handling without exceptions:
+
+```typescript
+const result = await signer.safeExecuteTransaction({
+  intent: {
+    action: transfer({ amount: near('1') }),
+    receiverAccountId: 'receiver.testnet'
+  }
+});
+
+if (result.ok) {
+  console.log('Success:', result.value.transactionOutcome.id);
+} else {
+  console.error('Failed:', result.error.kind);
+  // Handle the error
+}
+```
+
+## Multi-Action Transactions
+
+NEAR allows multiple actions in a single transaction:
+
+```typescript
+import { createAccount, transfer, addFullAccessKey, near, randomEd25519KeyPair } from 'near-api-ts';
+
+// Generate a new key pair for the new account
+const newKeyPair = randomEd25519KeyPair();
+
+// Create account with multiple actions
+await signer.executeTransaction({
+  intent: {
+    actions: [
+      createAccount(),
+      transfer({ amount: near('5') }),
+      addFullAccessKey({ publicKey: newKeyPair.publicKey })
+    ],
+    receiverAccountId: 'newaccount.sender.testnet'
+  }
+});
+
+console.log('New account created with 5 NEAR');
+console.log('New account private key:', newKeyPair.privateKey);
+```
+
+## Function Call Transactions
+
+### Calling Contract Methods
+
+Call smart contract methods with function call actions:
+
+```typescript
+import { functionCall, teraGas, near } from 'near-api-ts';
+
+// Call a contract method
+await signer.executeTransaction({
+  intent: {
+    action: functionCall({
+      functionName: 'set_status',
+      functionArgs: {
+        message: 'Hello, NEAR!'
+      },
+      gasLimit: teraGas('30'),
+      attachedDeposit: near('0')  // No deposit
+    }),
+    receiverAccountId: 'contract.testnet'
+  }
+});
+```
+
+### With Attached Deposit
+
+Many contract methods require NEAR tokens to be attached:
+
+```typescript
+import { functionCall, teraGas, near } from 'near-api-ts';
+
+// Mint an NFT with 0.1 NEAR attached
+await signer.executeTransaction({
+  intent: {
+    action: functionCall({
+      functionName: 'nft_mint',
+      functionArgs: {
+        token_id: '123',
+        metadata: {
+          title: 'My NFT',
+          description: 'An example NFT'
+        },
+        receiver_id: 'owner.testnet'
+      },
+      gasLimit: teraGas('50'),
+      attachedDeposit: near('0.1')
+    }),
+    receiverAccountId: 'nft-contract.testnet'
+  }
+});
+```
+
+### Custom Argument Serialization
+
+For non-JSON contracts, provide a custom serializer:
+
+```typescript
+import { functionCall, teraGas, toJsonBytes } from 'near-api-ts';
+
+await signer.executeTransaction({
+  intent: {
+    action: functionCall({
+      functionName: 'add_item',
+      functionArgs: { itemId: 42, itemName: 'Widget' },
+      gasLimit: teraGas('30'),
+      options: {
+        serializeArgs: ({ functionArgs }) => {
+          // Convert camelCase to snake_case for contract
+          return toJsonBytes({
+            item_id: functionArgs.itemId,
+            item_name: functionArgs.itemName
+          });
+        }
+      }
+    }),
+    receiverAccountId: 'contract.testnet'
+  }
+});
+```
+
+## Working with Gas
+
+### Gas Amounts
+
+Gas can be specified in different units:
+
+```typescript
+import { gas, teraGas } from 'near-api-ts';
+
+// Using teraGas (most common)
+const gasLimit1 = teraGas('30');  // 30 TGas
+
+// Using raw gas units
+const gasLimit2 = gas('30000000000000');  // 30 TGas in gas units
+
+// Gas arithmetic
+const total = teraGas('20').add(teraGas('10'));  // 30 TGas
+const remaining = teraGas('50').sub(teraGas('20'));  // 30 TGas
+
+// Comparisons
+if (teraGas('50').gt(teraGas('30'))) {
+  console.log('50 TGas is greater than 30 TGas');
+}
+```
+
+### Gas Estimation
+
+Different operations require different amounts of gas:
+
+- **Simple transfers**: ~0.3 TGas
+- **Function calls**: 30-50 TGas (depends on contract)
+- **Complex operations**: 100-200 TGas
+- **Cross-contract calls**: 100-300 TGas
+
+```typescript
+import { functionCall, teraGas } from 'near-api-ts';
+
+// Conservative gas limit for contract calls
+await signer.executeTransaction({
+  intent: {
+    action: functionCall({
+      functionName: 'complex_operation',
+      functionArgs: {},
+      gasLimit: teraGas('100')  // Generous limit
+    }),
+    receiverAccountId: 'contract.testnet'
+  }
+});
+```
+
+## Advanced Patterns
+
+### Transaction with Multiple Function Calls
+
+```typescript
+import { functionCall, teraGas, near } from 'near-api-ts';
+
+// Batch operations in one transaction
+await signer.executeTransaction({
+  intent: {
+    actions: [
+      functionCall({
+        functionName: 'operation_1',
+        functionArgs: { data: 'first' },
+        gasLimit: teraGas('30')
+      }),
+      functionCall({
+        functionName: 'operation_2',
+        functionArgs: { data: 'second' },
+        gasLimit: teraGas('30')
+      }),
+      functionCall({
+        functionName: 'operation_3',
+        functionArgs: { data: 'third' },
+        gasLimit: teraGas('30')
+      })
+    ],
+    receiverAccountId: 'contract.testnet'
+  }
+});
+```
+
+### Signing Without Executing
+
+Sign a transaction without sending it to the network:
+
+```typescript
+import { transfer, near } from 'near-api-ts';
+
+const signedTransaction = await signer.signTransaction({
+  intent: {
+    action: transfer({ amount: near('1') }),
+    receiverAccountId: 'receiver.testnet'
+  }
+});
+
+// Later, send the signed transaction
+const result = await client.sendSignedTransaction({
+  signedTransaction
+});
+```
+
+### Transaction Retry Logic
+
+```typescript
+import { transfer, near } from 'near-api-ts';
+
+async function sendWithRetry(maxRetries = 3) {
+  for (let attempt = 0; attempt < maxRetries; attempt++) {
+    try {
+      const result = await signer.executeTransaction({
+        intent: {
+          action: transfer({ amount: near('1') }),
+          receiverAccountId: 'receiver.testnet'
+        }
+      });
+      return result;
+    } catch (error) {
+      if (attempt === maxRetries - 1) throw error;
+      console.log(`Attempt ${attempt + 1} failed, retrying...`);
+      await new Promise(resolve => setTimeout(resolve, 1000));
+    }
+  }
+}
+
+const result = await sendWithRetry();
+console.log('Transaction successful:', result.transactionOutcome.id);
+```
+
+## Complete Example: Payment Flow
+
+Here's a complete example of a payment system with error handling:
+
+```typescript
+import { 
+  createTestnetClient,
+  createMemoryKeyService,
+  createMemorySigner,
+  transfer,
+  near,
+  isNatError
+} from 'near-api-ts';
+
+interface PaymentResult {
+  success: boolean;
+  transactionId?: string;
+  error?: string;
+}
+
+async function sendPayment(
+  fromAccount: string,
+  privateKey: string,
+  toAccount: string,
+  amount: string
+): Promise<PaymentResult> {
+  try {
+    // Setup
+    const client = createTestnetClient();
+    const keyService = createMemoryKeyService({
+      keySource: { privateKey }
+    });
+    const signer = createMemorySigner({
+      signerAccountId: fromAccount,
+      client,
+      keyService
+    });
+
+    // Validate amount
+    const nearAmount = near(amount);
+    if (nearAmount.near <= 0) {
+      return {
+        success: false,
+        error: 'Amount must be positive'
+      };
+    }
+
+    // Execute transaction
+    const result = await signer.executeTransaction({
+      intent: {
+        action: transfer({ amount: nearAmount }),
+        receiverAccountId: toAccount
+      }
+    });
+
+    return {
+      success: true,
+      transactionId: result.transactionOutcome.id
+    };
+  } catch (error) {
+    // Handle specific errors
+    if (isNatError(error, 'MemorySigner.ExecuteTransaction.Rpc.Transaction.Signer.Balance.TooLow')) {
+      return {
+        success: false,
+        error: 'Insufficient balance'
+      };
+    } else if (isNatError(error, 'MemorySigner.ExecuteTransaction.Rpc.Account.NotFound')) {
+      return {
+        success: false,
+        error: 'Receiver account not found'
+      };
+    } else {
+      return {
+        success: false,
+        error: 'Transaction failed'
+      };
+    }
+  }
+}
+
+// Usage
+const result = await sendPayment(
+  'sender.testnet',
+  'ed25519:your-private-key',
+  'receiver.testnet',
+  '5.5'
+);
+
+if (result.success) {
+  console.log('Payment successful!');
+  console.log('Transaction ID:', result.transactionId);
+} else {
+  console.error('Payment failed:', result.error);
+}
+```
+
+## Best Practices
+
+### Always Validate Inputs
+
+```typescript
+// Validate account IDs
+if (!receiverAccountId.includes('.')) {
+  throw new Error('Invalid account ID format');
+}
+
+// Validate amounts
+const amount = near(userInput);
+if (amount.near <= 0) {
+  throw new Error('Amount must be positive');
+}
+```
+
+### Use Appropriate Gas Limits
+
+```typescript
+// Don't use excessive gas
+const gasLimit = teraGas('30');  // Good for most operations
+
+// Avoid
+const gasLimit = teraGas('300');  // Unnecessarily high
+```
+
+### Handle All Error Cases
+
+```typescript
+try {
+  await signer.executeTransaction({ intent });
+} catch (error) {
+  if (isNatError(error, 'MemorySigner.ExecuteTransaction.Rpc.Transaction.Signer.Balance.TooLow')) {
+    // Handle insufficient balance
+  } else if (isNatError(error, 'MemorySigner.ExecuteTransaction.Rpc.Account.NotFound')) {
+    // Handle account not found
+  } else if (isNatError(error, 'MemorySigner.ExecuteTransaction.Rpc.Transaction.Expired')) {
+    // Handle expired transaction
+  } else {
+    // Handle unknown errors
+  }
+}
+```
+
+### Store Transaction Receipts
+
+```typescript
+const result = await signer.executeTransaction({ intent });
+
+// Store important transaction data
+const receipt = {
+  transactionId: result.transactionOutcome.id,
+  blockHash: result.transactionOutcome.blockHash,
+  status: result.transactionOutcome.outcome.status,
+  gasUsed: result.transactionOutcome.outcome.gasBurnt,
+  timestamp: new Date().toISOString()
+};
+
+console.log('Transaction receipt:', receipt);
+```
+
+## Next Steps
+
+- [Working with Contracts](/guides/working-with-contracts) - Deploy and manage smart contracts
+- [Managing Keys](/guides/managing-keys) - Advanced key management techniques
+- [Tokens and Gas](/guides/tokens-and-gas) - Deep dive into NEAR tokens and gas

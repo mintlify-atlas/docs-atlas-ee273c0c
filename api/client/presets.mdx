@@ -1,0 +1,339 @@
+---
+title: Network Presets
+description: Pre-configured clients for NEAR testnet and mainnet with optimized RPC endpoints
+---
+
+The NEAR API TypeScript library provides convenience functions for creating clients pre-configured for testnet and mainnet networks. These presets use carefully selected public RPC endpoints with good performance and reliability.
+
+## createTestnetClient
+
+Creates a client configured for NEAR testnet with multiple public RPC endpoints.
+
+### Signature
+
+```typescript
+function createTestnetClient(): Client
+```
+
+### Returns
+
+<ResponseField name="Client" type="Client">
+  A Client instance configured for NEAR testnet
+</ResponseField>
+
+### Configuration
+
+The testnet client is configured with the following RPC endpoints:
+
+**Regular endpoints:**
+- `https://test.rpc.fastnear.com` - FastNEAR testnet RPC
+- `https://rpc.testnet.near.org` - Official NEAR testnet RPC
+
+**Archival endpoints:**
+- `https://neart.lava.build:443` - Lava testnet archival RPC
+
+### Example
+
+```typescript
+import { createTestnetClient } from 'near-api-ts';
+
+const client = createTestnetClient();
+
+// Query testnet account
+const accountInfo = await client.getAccountInfo({
+  accountId: 'example.testnet'
+});
+
+console.log('Testnet account balance:', accountInfo.accountInfo.balance.total);
+```
+
+## createMainnetClient
+
+Creates a client configured for NEAR mainnet with multiple public RPC endpoints.
+
+### Signature
+
+```typescript
+function createMainnetClient(): Client
+```
+
+### Returns
+
+<ResponseField name="Client" type="Client">
+  A Client instance configured for NEAR mainnet
+</ResponseField>
+
+### Configuration
+
+The mainnet client is configured with the following RPC endpoints:
+
+**Regular endpoints:**
+- `https://free.rpc.fastnear.com` - FastNEAR mainnet RPC
+- `https://rpc.intea.rs` - Intear mainnet RPC
+- `https://near.blockpi.network/v1/rpc/public` - BlockPI mainnet RPC
+
+**Archival endpoints:**
+- `https://near.lava.build:443` - Lava mainnet archival RPC
+
+### Example
+
+```typescript
+import { createMainnetClient } from 'near-api-ts';
+
+const client = createMainnetClient();
+
+// Query mainnet account
+const accountInfo = await client.getAccountInfo({
+  accountId: 'example.near'
+});
+
+console.log('Mainnet account balance:', accountInfo.accountInfo.balance.total);
+```
+
+## Benefits of Presets
+
+<CardGroup cols={2}>
+  <Card title="Quick Setup" icon="bolt">
+    Get started immediately without configuring RPC endpoints
+  </Card>
+  <Card title="Automatic Failover" icon="rotate">
+    Multiple endpoints provide redundancy and reliability
+  </Card>
+  <Card title="Optimized Performance" icon="gauge-high">
+    Carefully selected endpoints for best performance
+  </Card>
+  <Card title="Maintained" icon="wrench">
+    Endpoints are updated and maintained by the library
+  </Card>
+</CardGroup>
+
+## Comparing Presets vs Custom Configuration
+
+### Using Presets (Recommended for most use cases)
+
+```typescript
+import { createTestnetClient } from 'near-api-ts';
+
+const client = createTestnetClient();
+```
+
+**Advantages:**
+- Zero configuration required
+- Multiple RPC endpoints for failover
+- Regularly updated with best endpoints
+- Sensible defaults for timeouts and retry behavior
+
+### Using Custom Configuration
+
+```typescript
+import { createClient } from 'near-api-ts';
+
+const client = createClient({
+  transport: {
+    rpcEndpoints: {
+      regular: [{ url: 'https://your-custom-rpc.example.com' }]
+    },
+    policy: {
+      timeouts: {
+        requestMs: 60_000
+      }
+    }
+  }
+});
+```
+
+**Use custom configuration when:**
+- You have your own RPC infrastructure
+- You need custom headers (e.g., API keys)
+- You need different timeout or retry behavior
+- You're using a private or custom NEAR network
+
+## Complete Examples
+
+### Testnet Development
+
+```typescript
+import { createTestnetClient } from 'near-api-ts';
+
+const client = createTestnetClient();
+
+// Get account information
+const account = await client.getAccountInfo({
+  accountId: 'alice.testnet'
+});
+
+console.log('Account:', account.accountId);
+console.log('Balance:', account.accountInfo.balance.available);
+console.log('Storage used:', account.accountInfo.usedStorageBytes);
+
+// Call a view function on a testnet contract
+const greeting = await client.callContractReadFunction({
+  contractAccountId: 'hello.testnet',
+  functionName: 'get_greeting',
+  functionArgs: { account_id: 'alice.testnet' }
+});
+
+console.log('Greeting:', greeting.result);
+
+// Get latest block
+const block = await client.getBlock();
+console.log('Latest block height:', block.rawRpcResult.header.height);
+console.log('Block hash:', block.rawRpcResult.header.hash);
+```
+
+### Mainnet Production
+
+```typescript
+import { createMainnetClient } from 'near-api-ts';
+
+const client = createMainnetClient();
+
+// Query mainnet contract
+const nftMetadata = await client.callContractReadFunction({
+  contractAccountId: 'nft-contract.near',
+  functionName: 'nft_token',
+  functionArgs: { token_id: '1' }
+});
+
+console.log('NFT metadata:', nftMetadata.result);
+
+// Get account with error handling
+const result = await client.safeGetAccountInfo({
+  accountId: 'example.near'
+});
+
+if (result.ok) {
+  console.log('Account found:', result.value.accountId);
+  console.log('Balance:', result.value.accountInfo.balance.total);
+} else {
+  if (result.error.kind === 'Client.GetAccountInfo.Rpc.Account.NotFound') {
+    console.log('Account does not exist');
+  } else {
+    console.error('Error:', result.error.kind);
+  }
+}
+```
+
+### Environment-Based Selection
+
+```typescript
+import { createTestnetClient, createMainnetClient } from 'near-api-ts';
+
+const isProduction = process.env.NODE_ENV === 'production';
+const client = isProduction ? createMainnetClient() : createTestnetClient();
+
+console.log(`Connected to ${isProduction ? 'mainnet' : 'testnet'}`);
+
+// Use the client
+const block = await client.getBlock();
+console.log('Current block height:', block.rawRpcResult.header.height);
+```
+
+## Transport Policy
+
+Both preset clients use the default transport policy:
+
+```typescript
+{
+  rpcTypePreferences: ['Regular', 'Archival'],
+  timeouts: {
+    requestMs: 30_000,   // 30 seconds total
+    attemptMs: 5_000     // 5 seconds per attempt
+  },
+  rpc: {
+    maxAttempts: 2,
+    retryBackoff: {
+      minDelayMs: 100,
+      maxDelayMs: 500,
+      multiplier: 3
+    }
+  },
+  failover: {
+    maxRounds: 2,
+    nextRpcDelayMs: 200,
+    nextRoundDelayMs: 200
+  }
+}
+```
+
+This means:
+- Regular endpoints are tried first, then archival
+- Each RPC endpoint is retried up to 2 times with exponential backoff
+- The client will cycle through all endpoints up to 2 rounds
+- Individual attempts timeout after 5 seconds
+- Total request timeout is 30 seconds
+
+## When to Use Each Preset
+
+### Use createTestnetClient for:
+
+<CardGroup cols={2}>
+  <Card title="Development" icon="code">
+    Building and testing your application
+  </Card>
+  <Card title="Testing" icon="flask">
+    Running integration tests
+  </Card>
+  <Card title="Prototyping" icon="pencil">
+    Experimenting with new features
+  </Card>
+  <Card title="Learning" icon="book">
+    Learning NEAR development
+  </Card>
+</CardGroup>
+
+### Use createMainnetClient for:
+
+<CardGroup cols={2}>
+  <Card title="Production" icon="rocket">
+    Live applications serving real users
+  </Card>
+  <Card title="Real Assets" icon="coins">
+    Applications handling real NEAR tokens
+  </Card>
+  <Card title="Mainnet Data" icon="database">
+    Querying mainnet contracts and accounts
+  </Card>
+  <Card title="Analytics" icon="chart-line">
+    Blockchain data analysis and indexing
+  </Card>
+</CardGroup>
+
+## Customizing Preset Clients
+
+If you want to use a preset as a base but customize the transport policy, use the preset's configuration as a starting point:
+
+```typescript
+import { createClient } from 'near-api-ts';
+
+// Testnet with custom timeout
+const client = createClient({
+  transport: {
+    rpcEndpoints: {
+      regular: [
+        { url: 'https://test.rpc.fastnear.com' },
+        { url: 'https://rpc.testnet.near.org' }
+      ],
+      archival: [
+        { url: 'https://neart.lava.build:443' }
+      ]
+    },
+    policy: {
+      timeouts: {
+        requestMs: 60_000  // 60 seconds instead of 30
+      }
+    }
+  }
+});
+```
+
+## Related
+
+<CardGroup cols={2}>
+  <Card title="Create Custom Client" icon="sliders" href="/api/client/create-client">
+    Configure your own RPC endpoints and policies
+  </Card>
+  <Card title="Client Overview" icon="book" href="/api/client/overview">
+    Learn about Client methods and capabilities
+  </Card>
+</CardGroup>

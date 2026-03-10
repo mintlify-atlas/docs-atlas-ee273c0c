@@ -1,0 +1,419 @@
+---
+title: "File Key Service"
+description: "Persistent file-based key storage for Node.js applications"
+---
+
+## Overview
+
+The File Key Service provides persistent, file-based storage for private keys in Node.js environments. Keys are stored in the local filesystem and automatically loaded when needed.
+
+<Note>
+  File Key Service is only available in Node.js environments. For browser applications, use [IDB Key Service](/api/key-services/idb-key-service).
+</Note>
+
+## Creating a File Key Service
+
+### Method Signature
+
+```typescript
+createFileKeyService(args?: CreateFileKeyServiceArgs): FileKeyService
+safeCreateFileKeyService(args?: CreateFileKeyServiceArgs): Result<FileKeyService, Error>
+```
+
+### Parameters
+
+<ParamField path="path" type="string" optional>
+  Directory path for storing key files. Defaults to `.near-api-ts:key-vault` in the current working directory.
+</ParamField>
+
+## Interface
+
+The File Key Service implements the following interface:
+
+```typescript
+interface FileKeyService {
+  // Add a key pair to the service
+  addKeyPair(keyPair: KeyPair): Promise<void>;
+  safeAddKeyPair(keyPair: KeyPair): Promise<Result<void, Error>>;
+  
+  // Check if a key pair exists
+  hasKeyPair(publicKey: PublicKey): Promise<boolean>;
+  safeHasKeyPair(publicKey: PublicKey): Promise<Result<boolean, Error>>;
+  
+  // Remove a key pair from the service
+  removeKeyPair(keyPair: KeyPair): Promise<void>;
+  safeRemoveKeyPair(keyPair: KeyPair): Promise<Result<void, Error>>;
+  
+  // Clear all key pairs
+  clear(): Promise<void>;
+  safeClear(): Promise<Result<void, Error>>;
+  
+  // Sign a transaction
+  signTransaction(args: SignTransactionArgs): Promise<SignedTransaction>;
+  safeSignTransaction(args: SignTransactionArgs): Promise<Result<SignedTransaction, Error>>;
+}
+```
+
+## Examples
+
+### Create with Default Path
+
+```typescript
+import { createFileKeyService } from 'near-api-ts/node';
+
+// Keys stored in ./.near-api-ts:key-vault
+const keyService = createFileKeyService();
+
+console.log('File key service ready');
+```
+
+### Create with Custom Path
+
+```typescript
+import { createFileKeyService } from 'near-api-ts/node';
+import path from 'node:path';
+
+// Store keys in a custom directory
+const keyService = createFileKeyService({
+  path: path.join(process.env.HOME, '.near-credentials')
+});
+```
+
+### Add Key Pair
+
+```typescript
+import { createFileKeyService, randomEd25519KeyPair } from 'near-api-ts';
+
+const keyService = createFileKeyService();
+const keyPair = randomEd25519KeyPair();
+
+// Add key pair (persists to disk)
+await keyService.addKeyPair(keyPair);
+
+console.log('Key pair added:', keyPair.publicKey);
+```
+
+### Check if Key Exists
+
+```typescript
+const exists = await keyService.hasKeyPair(keyPair.publicKey);
+
+if (exists) {
+  console.log('Key pair exists in storage');
+} else {
+  console.log('Key pair not found');
+}
+```
+
+### Remove Key Pair
+
+```typescript
+import { createFileKeyService, randomEd25519KeyPair } from 'near-api-ts';
+
+const keyService = createFileKeyService();
+const keyPair = randomEd25519KeyPair();
+
+// Add and then remove
+await keyService.addKeyPair(keyPair);
+await keyService.removeKeyPair(keyPair);
+
+console.log('Key pair removed');
+```
+
+### Clear All Keys
+
+```typescript
+// Remove all stored key pairs
+await keyService.clear();
+
+console.log('All key pairs cleared');
+```
+
+### Sign Transaction
+
+```typescript
+import { 
+  createFileKeyService, 
+  randomEd25519KeyPair, 
+  transfer 
+} from 'near-api-ts';
+
+const keyService = createFileKeyService();
+const keyPair = randomEd25519KeyPair();
+
+// Add key to service
+await keyService.addKeyPair(keyPair);
+
+// Get recent block hash
+const block = await client.getBlock();
+
+// Sign transaction
+const signedTx = await keyService.signTransaction({
+  transaction: {
+    signerAccountId: 'sender.near',
+    signerPublicKey: keyPair.publicKey,
+    receiverAccountId: 'receiver.near',
+    nonce: 1,
+    blockHash: block.rawRpcResult.header.hash,
+    action: transfer({ amount: { near: '1' } })
+  }
+});
+
+console.log('Transaction signed');
+```
+
+### Safe Operations with Error Handling
+
+```typescript
+import { createFileKeyService, randomEd25519KeyPair } from 'near-api-ts';
+
+const keyPair = randomEd25519KeyPair();
+const keyService = createFileKeyService();
+
+// Safe add
+const addResult = await keyService.safeAddKeyPair(keyPair);
+if (!addResult.ok) {
+  console.error('Failed to add key:', addResult.error);
+  return;
+}
+
+// Safe sign
+const signResult = await keyService.safeSignTransaction({
+  transaction: {
+    signerAccountId: 'sender.near',
+    signerPublicKey: keyPair.publicKey,
+    receiverAccountId: 'receiver.near',
+    nonce: 1,
+    blockHash: recentBlockHash,
+    action: transfer({ amount: { near: '1' } })
+  }
+});
+
+if (signResult.ok) {
+  console.log('Transaction signed:', signResult.value);
+} else {
+  console.error('Failed to sign:', signResult.error);
+}
+
+// Clean up
+await keyService.removeKeyPair(keyPair);
+```
+
+### Use with Client
+
+```typescript
+import { createClient, createFileKeyService } from 'near-api-ts';
+
+const keyService = createFileKeyService();
+
+const client = createClient({
+  network: 'testnet',
+  keyService
+});
+
+// Client can now sign transactions automatically using stored keys
+const result = await client.sendTransaction({
+  signerAccountId: 'sender.testnet',
+  signerPublicKey: storedPublicKey,
+  receiverAccountId: 'receiver.testnet',
+  actions: [/* ... */]
+});
+```
+
+### Import Existing Keys
+
+```typescript
+import { createFileKeyService } from 'near-api-ts';
+import { parsePrivateKey } from 'near-api-ts/crypto';
+import fs from 'node:fs/promises';
+
+const keyService = createFileKeyService();
+
+// Import key from file or environment
+const privateKeyString = process.env.NEAR_PRIVATE_KEY;
+const keyPair = parsePrivateKey(privateKeyString);
+
+await keyService.addKeyPair(keyPair);
+console.log('Imported key:', keyPair.publicKey);
+```
+
+## File Storage Structure
+
+Keys are stored in the filesystem with the following structure:
+
+```
+.near-api-ts:key-vault/
+├── ed25519:ABC123.../
+│   └── private.key
+├── ed25519:DEF456.../
+│   └── private.key
+└── secp256k1:GHI789.../
+    └── private.key
+```
+
+Each key pair is stored in a directory named after its public key, with the private key stored in a `private.key` file.
+
+## Error Types
+
+### Creation Errors
+
+- `CreateFileKeyService.Internal` - Internal error during creation
+
+### Sign Transaction Errors
+
+- `FileKeyService.SignTransaction.Args.InvalidSchema` - Invalid transaction arguments
+- `FileKeyService.SignTransaction.Internal` - Internal signing error
+
+## Security Considerations
+
+<Warning>
+  **File System Security**
+  
+  - Key files are stored in plain text on disk
+  - Ensure proper file system permissions (chmod 600)
+  - Never commit key directories to version control
+  - Add key directory to `.gitignore`
+</Warning>
+
+### Secure File Permissions
+
+```typescript
+import { createFileKeyService } from 'near-api-ts/node';
+import fs from 'node:fs/promises';
+import path from 'node:path';
+
+const keyDir = path.join(process.env.HOME, '.near-credentials');
+const keyService = createFileKeyService({ path: keyDir });
+
+// Set secure permissions (Unix/Linux/Mac)
+try {
+  await fs.chmod(keyDir, 0o700); // rwx------
+  console.log('Secure permissions set');
+} catch (error) {
+  console.error('Failed to set permissions:', error);
+}
+```
+
+### .gitignore
+
+```
+# Ignore NEAR key storage
+.near-api-ts:key-vault/
+.near-credentials/
+*.near-keys/
+```
+
+## Use Cases
+
+<CardGroup cols={2}>
+  <Card title="Server Applications" icon="server">
+    Backend services that need persistent key storage
+  </Card>
+  
+  <Card title="CLI Tools" icon="terminal">
+    Command-line applications managing NEAR accounts
+  </Card>
+  
+  <Card title="Development" icon="code">
+    Local development with persistent test accounts
+  </Card>
+  
+  <Card title="Automated Tasks" icon="robot">
+    Scripts and cron jobs that sign transactions
+  </Card>
+</CardGroup>
+
+## Best Practices
+
+<AccordionGroup>
+  <Accordion title="Secure Storage Location">
+    Store keys in a secure location with restricted permissions:
+
+    ```typescript
+    // Good: User's home directory with restricted access
+    const keyService = createFileKeyService({
+      path: path.join(os.homedir(), '.near-credentials')
+    });
+
+    // Bad: Project directory (might be committed to git)
+    const keyService = createFileKeyService({
+      path: './keys'
+    });
+    ```
+  </Accordion>
+
+  <Accordion title="Environment-Specific Paths">
+    Use different key storage paths for different environments:
+
+    ```typescript
+    const keyPath = process.env.NODE_ENV === 'production'
+      ? '/var/secrets/near-keys'
+      : path.join(os.homedir(), '.near-credentials-dev');
+
+    const keyService = createFileKeyService({ path: keyPath });
+    ```
+  </Accordion>
+
+  <Accordion title="Key Rotation">
+    Implement key rotation for long-running applications:
+
+    ```typescript
+    async function rotateKey(keyService: FileKeyService, oldKeyPair: KeyPair) {
+      // Generate new key
+      const newKeyPair = randomEd25519KeyPair();
+      
+      // Add new key
+      await keyService.addKeyPair(newKeyPair);
+      
+      // Update on-chain (add new access key, remove old)
+      // ...
+      
+      // Remove old key from storage
+      await keyService.removeKeyPair(oldKeyPair);
+      
+      return newKeyPair;
+    }
+    ```
+  </Accordion>
+
+  <Accordion title="Backup Keys">
+    Implement a backup strategy for important keys:
+
+    ```typescript
+    import { createFileKeyService } from 'near-api-ts/node';
+    import fs from 'node:fs/promises';
+
+    async function backupKeys(keyService: FileKeyService, backupPath: string) {
+      const keyDir = '.near-api-ts:key-vault';
+      await fs.cp(keyDir, backupPath, { recursive: true });
+      console.log(`Keys backed up to ${backupPath}`);
+    }
+    ```
+  </Accordion>
+</AccordionGroup>
+
+## Migration from near-api-js
+
+If you're migrating from `near-api-js`, the File Key Service is similar to `UnencryptedFileSystemKeyStore`:
+
+```typescript
+// near-api-js (old)
+import { keyStores } from 'near-api-js';
+const keyStore = new keyStores.UnencryptedFileSystemKeyStore(keyPath);
+
+// near-api-ts (new)
+import { createFileKeyService } from 'near-api-ts/node';
+const keyService = createFileKeyService({ path: keyPath });
+```
+
+## Source Code
+
+- Implementation: `node/src/fileKeyService/fileKeyService.ts:28`
+- Type definitions: `node/types/fileKeyService/fileKeyService.ts:1`
+- Tests: `node/tests/unit/fileKeyService/signTransaction.test.ts:1`
+
+## Related
+
+- [Memory Key Service](/api/key-services/memory-key-service) - In-memory key storage
+- [IDB Key Service](/api/key-services/idb-key-service) - Browser-based key storage
+- [Key Pairs](/api/crypto/key-pairs) - Working with cryptographic keys

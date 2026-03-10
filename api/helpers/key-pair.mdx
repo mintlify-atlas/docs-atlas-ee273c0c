@@ -1,0 +1,270 @@
+---
+title: "Key Pair Helpers"
+description: "Functions for creating and managing cryptographic key pairs"
+---
+
+The key pair helpers provide functions for creating and working with cryptographic key pairs used for signing transactions on the NEAR network.
+
+## Overview
+
+NEAR supports two elliptic curve cryptography algorithms:
+- **Ed25519**: Default and recommended for most use cases
+- **Secp256k1**: Used for Bitcoin and Ethereum compatibility
+
+The library provides both "safe" variants (return `Result` types) and "throwable" variants (throw errors) for all functions.
+
+## Functions
+
+### keyPair()
+
+Creates a KeyPair from an existing private key string.
+
+```typescript
+import { keyPair } from '@near-api/universal';
+
+const kp = keyPair('ed25519:3D4YudUahN1ktKQH4L8qk4GvBRX1M9aUE6VSVWPN1nX8B...');
+
+console.log(kp.publicKey);  // "ed25519:..."
+console.log(kp.privateKey); // "ed25519:..."
+
+// Sign a message
+const signature = kp.sign('48656c6c6f'); // "Hello" in hex
+console.log(signature.signature); // "ed25519:..."
+```
+
+**Parameters:**
+- `privateKey` (string): Private key in curve:base58 format (e.g., `"ed25519:..."` or `"secp256k1:..."`)
+
+**Returns:** `KeyPair`
+
+**Safe variant:** `safeKeyPair()`
+
+### randomEd25519KeyPair()
+
+Generates a new random Ed25519 key pair.
+
+```typescript
+import { randomEd25519KeyPair } from '@near-api/universal';
+
+const kp = randomEd25519KeyPair();
+
+console.log(kp.publicKey);  // "ed25519:..."
+console.log(kp.privateKey); // "ed25519:..."
+```
+
+**Returns:** `KeyPair`
+
+**Safe variant:** `safeRandomEd25519KeyPair()`
+
+### randomSecp256k1KeyPair()
+
+Generates a new random Secp256k1 key pair.
+
+```typescript
+import { randomSecp256k1KeyPair } from '@near-api/universal';
+
+const kp = randomSecp256k1KeyPair();
+
+console.log(kp.publicKey);  // "secp256k1:..."
+console.log(kp.privateKey); // "secp256k1:..."
+```
+
+**Returns:** `KeyPair`
+
+**Safe variant:** `safeRandomSecp256k1KeyPair()`
+
+## KeyPair Object
+
+The `KeyPair` object provides the following properties and methods:
+
+### Properties
+
+- **`publicKey`** (PublicKey): Public key in curve:base58 format
+- **`privateKey`** (PrivateKey): Private key in curve:base58 format
+
+### Methods
+
+#### sign()
+
+Signs a message and returns the signature.
+
+```typescript
+const kp = randomEd25519KeyPair();
+
+// Sign hex string
+const sig1 = kp.sign('48656c6c6f');
+
+// Sign Uint8Array
+const sig2 = kp.sign(new Uint8Array([72, 101, 108, 108, 111]));
+
+console.log(sig1.signature); // "ed25519:..."
+console.log(sig1.curve);     // "ed25519"
+console.log(sig1.u8Signature); // Uint8Array
+```
+
+**Parameters:**
+- `message` (Hex): Message to sign (Uint8Array or hex string)
+
+**Returns:** `SignOutput`
+- `signature` (Signature): Signature in curve:base58 format
+- `curve` (Curve): Curve type (`"ed25519"` or `"secp256k1"`)
+- `u8Signature` (Uint8Array): Raw signature bytes
+
+**Safe variant:** `safeSign()`
+
+## Type Definitions
+
+### KeyPair
+
+```typescript
+type KeyPair = {
+  publicKey: PublicKey;
+  privateKey: PrivateKey;
+  sign: Sign;
+  safeSign: SafeSign;
+};
+```
+
+### PublicKey & PrivateKey
+
+```typescript
+type PublicKey = Ed25519PublicKey | Secp256k1PublicKey;
+type PrivateKey = Ed25519PrivateKey | Secp256k1PrivateKey;
+
+type Ed25519PublicKey = `ed25519:${Base58String}`;
+type Secp256k1PublicKey = `secp256k1:${Base58String}`;
+```
+
+### SignOutput
+
+```typescript
+type SignOutput = {
+  signature: Signature;
+  curve: Curve;
+  u8Signature: Uint8Array;
+};
+
+type Signature = Ed25519Signature | Secp256k1Signature;
+type Curve = 'ed25519' | 'secp256k1';
+```
+
+See [Crypto Types](/api/types/crypto) for complete type information.
+
+## Examples
+
+### Creating Key Pairs
+
+```typescript
+import { 
+  keyPair, 
+  randomEd25519KeyPair, 
+  randomSecp256k1KeyPair 
+} from '@near-api/universal';
+
+// From existing private key
+const existingKp = keyPair('ed25519:...');
+
+// Generate new Ed25519 key pair (recommended)
+const ed25519Kp = randomEd25519KeyPair();
+
+// Generate new Secp256k1 key pair
+const secp256k1Kp = randomSecp256k1KeyPair();
+```
+
+### Signing Messages
+
+```typescript
+import { randomEd25519KeyPair } from '@near-api/universal';
+
+const kp = randomEd25519KeyPair();
+
+// Sign a message
+const message = 'Hello NEAR!';
+const hexMessage = Buffer.from(message).toString('hex');
+const signature = kp.sign(hexMessage);
+
+console.log('Signature:', signature.signature);
+console.log('Curve:', signature.curve);
+```
+
+### Safe Operations
+
+```typescript
+import { safeKeyPair } from '@near-api/universal';
+
+const result = safeKeyPair('ed25519:...');
+
+if (result.ok) {
+  const kp = result.value;
+  const sig = kp.safeSign('48656c6c6f');
+  
+  if (sig.ok) {
+    console.log(sig.value.signature);
+  } else {
+    console.error('Sign error:', sig.error);
+  }
+} else {
+  console.error('KeyPair error:', result.error);
+}
+```
+
+### Using with Memory Signer
+
+```typescript
+import { 
+  createMemorySigner, 
+  randomEd25519KeyPair 
+} from '@near-api/universal';
+
+const kp = randomEd25519KeyPair();
+
+const signer = createMemorySigner({
+  accountId: 'alice.near',
+  keyPair: kp
+});
+```
+
+### Key Storage
+
+```typescript
+import { randomEd25519KeyPair } from '@near-api/universal';
+
+const kp = randomEd25519KeyPair();
+
+// Store private key securely (e.g., encrypted)
+const privateKeyToStore = kp.privateKey;
+
+// Later, recreate the key pair
+const restoredKp = keyPair(privateKeyToStore);
+```
+
+## Security Considerations
+
+1. **Never expose private keys**: Private keys should be stored securely and never committed to version control
+2. **Use Ed25519 by default**: Ed25519 is faster and produces smaller signatures
+3. **Key rotation**: Consider rotating keys periodically for enhanced security
+4. **Secure storage**: Use hardware security modules (HSMs) or secure enclaves for production keys
+
+## Error Handling
+
+Common errors:
+
+- **Invalid private key format**: Key must be in `curve:base58` format
+- **Invalid curve**: Only `ed25519` and `secp256k1` are supported
+- **Malformed base58**: The base58 portion must be valid
+
+```typescript
+import { safeKeyPair } from '@near-api/universal';
+
+const result = safeKeyPair('invalid-key');
+
+if (!result.ok) {
+  console.error(result.error.kind); // "CreateKeyPair.Args.InvalidSchema"
+}
+```
+
+## Related
+
+- [Crypto Types](/api/types/crypto)
+- [Memory Signer](/api/signers/memory-signer)
+- [Transaction Signing](/api/transactions)

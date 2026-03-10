@@ -1,0 +1,344 @@
+---
+title: getAccountAccessKeys
+description: Retrieve all access keys for a NEAR account
+---
+
+## Overview
+
+Retrieves all access keys associated with a NEAR account, including both full access keys and function call access keys.
+
+## Method Signatures
+
+### Throwable Variant
+
+```typescript
+client.getAccountAccessKeys(args: GetAccountAccessKeysArgs): Promise<GetAccountAccessKeysOutput>
+```
+
+Throws an error if the operation fails.
+
+### Safe Variant
+
+```typescript
+client.safeGetAccountAccessKeys(args: GetAccountAccessKeysArgs): Promise<Result<GetAccountAccessKeysOutput, GetAccountAccessKeysError>>
+```
+
+Returns a `Result` object that contains either the success value or error, never throws.
+
+## Parameters
+
+<ParamField path="accountId" type="AccountId" required>
+  The account ID to query access keys for.
+</ParamField>
+
+<ParamField path="atMomentOf" type="BlockReference">
+  Query access keys state at a specific block. Can be:
+  - `'LatestOptimisticBlock'` - Latest optimistic block (default)
+  - `'LatestNearFinalBlock'` - Latest near-final block
+  - `'LatestFinalBlock'` - Latest final block
+  - `{ blockHash: BlockHash }` - Specific block by hash
+  - `{ blockHeight: BlockHeight }` - Specific block by height
+  - `'EarliestAvailableBlock'` - Earliest available block
+  - `'GenesisBlock'` - Genesis block
+</ParamField>
+
+<ParamField path="policies" type="object">
+  Configuration for transport behavior.
+  
+  <ParamField path="policies.transport" type="PartialTransportPolicy">
+    Transport-specific policies like retry behavior and timeout settings.
+  </ParamField>
+</ParamField>
+
+<ParamField path="options" type="object">
+  Additional execution options.
+  
+  <ParamField path="options.signal" type="AbortSignal">
+    AbortSignal to cancel the request.
+  </ParamField>
+</ParamField>
+
+## Return Type
+
+<ResponseField name="blockHash" type="BlockHash">
+  Hash of the block where the access keys state was queried.
+</ResponseField>
+
+<ResponseField name="blockHeight" type="BlockHeight">
+  Height of the block where the access keys state was queried.
+</ResponseField>
+
+<ResponseField name="accountId" type="AccountId">
+  The queried account ID.
+</ResponseField>
+
+<ResponseField name="accountAccessKeys" type="AccountAccessKey[]">
+  Array of access keys. Each key can be either a `FullAccessKey` or `FunctionCallKey`.
+  
+  ### FullAccessKey
+  
+  <ResponseField name="accessType" type="'FullAccess'">
+    Indicates this is a full access key.
+  </ResponseField>
+  
+  <ResponseField name="publicKey" type="PublicKey">
+    The public key.
+  </ResponseField>
+  
+  <ResponseField name="nonce" type="Nonce">
+    Current nonce for the key (used for transaction ordering).
+  </ResponseField>
+  
+  ### FunctionCallKey
+  
+  <ResponseField name="accessType" type="'FunctionCall'">
+    Indicates this is a function call access key.
+  </ResponseField>
+  
+  <ResponseField name="publicKey" type="PublicKey">
+    The public key.
+  </ResponseField>
+  
+  <ResponseField name="nonce" type="Nonce">
+    Current nonce for the key.
+  </ResponseField>
+  
+  <ResponseField name="contractAccountId" type="AccountId">
+    The contract account this key is allowed to call.
+  </ResponseField>
+  
+  <ResponseField name="gasBudget" type="NearToken" optional>
+    Maximum gas budget for function calls (if set).
+  </ResponseField>
+  
+  <ResponseField name="allowedFunctions" type="ContractFunctionName[]" optional>
+    Specific functions this key can call (if restricted). If undefined, can call any function.
+  </ResponseField>
+</ResponseField>
+
+<ResponseField name="rawRpcResult" type="RpcQueryAccessKeyListResult">
+  Raw RPC result from the NEAR node.
+</ResponseField>
+
+## Error Codes
+
+When using `safeGetAccountAccessKeys`, the following error codes may be returned:
+
+### Client Errors
+
+- `Client.GetAccountAccessKeys.Args.InvalidSchema` - Invalid arguments provided
+- `Client.GetAccountAccessKeys.PreferredRpc.NotFound` - Preferred RPC endpoint not found
+- `Client.GetAccountAccessKeys.Timeout` - Request timed out
+- `Client.GetAccountAccessKeys.Aborted` - Request was aborted
+- `Client.GetAccountAccessKeys.Exhausted` - All retry attempts exhausted
+
+### RPC Errors
+
+- `Client.GetAccountAccessKeys.Rpc.NotSynced` - Node is not synced
+- `Client.GetAccountAccessKeys.Rpc.Shard.NotTracked` - Shard is not tracked by this node
+- `Client.GetAccountAccessKeys.Rpc.Block.GarbageCollected` - Block has been garbage collected
+- `Client.GetAccountAccessKeys.Rpc.Block.NotFound` - Block not found
+
+### Internal Errors
+
+- `Client.GetAccountAccessKeys.Internal` - Internal library error
+
+## Examples
+
+### Basic Usage (Throwable)
+
+```typescript
+const keys = await client.getAccountAccessKeys({
+  accountId: 'alice.near'
+});
+
+console.log(`Total keys: ${keys.accountAccessKeys.length}`);
+
+keys.accountAccessKeys.forEach((key, index) => {
+  console.log(`Key ${index + 1}: ${key.publicKey}`);
+  console.log(`Type: ${key.accessType}`);
+});
+```
+
+### Safe Variant with Error Handling
+
+```typescript
+const result = await client.safeGetAccountAccessKeys({
+  accountId: 'alice.near'
+});
+
+if (result.ok) {
+  const { accountAccessKeys } = result.value;
+  console.log(`Found ${accountAccessKeys.length} access keys`);
+  
+  accountAccessKeys.forEach(key => {
+    if (key.accessType === 'FullAccess') {
+      console.log(`Full access: ${key.publicKey}`);
+    } else {
+      console.log(`Function call: ${key.publicKey} -> ${key.contractAccountId}`);
+    }
+  });
+} else {
+  console.error('Error:', result.error.kind);
+}
+```
+
+### Count Full Access Keys
+
+```typescript
+const keys = await client.getAccountAccessKeys({
+  accountId: 'alice.near'
+});
+
+const fullAccessKeys = keys.accountAccessKeys.filter(
+  key => key.accessType === 'FullAccess'
+);
+
+const functionCallKeys = keys.accountAccessKeys.filter(
+  key => key.accessType === 'FunctionCall'
+);
+
+console.log(`Full access keys: ${fullAccessKeys.length}`);
+console.log(`Function call keys: ${functionCallKeys.length}`);
+```
+
+### List All Function Call Keys
+
+```typescript
+const keys = await client.getAccountAccessKeys({
+  accountId: 'alice.near'
+});
+
+const functionCallKeys = keys.accountAccessKeys.filter(
+  (key): key is FunctionCallKey => key.accessType === 'FunctionCall'
+);
+
+functionCallKeys.forEach(key => {
+  console.log(`Public Key: ${key.publicKey}`);
+  console.log(`Contract: ${key.contractAccountId}`);
+  
+  if (key.allowedFunctions) {
+    console.log(`Allowed functions: ${key.allowedFunctions.join(', ')}`);
+  } else {
+    console.log('Allowed functions: All');
+  }
+  
+  if (key.gasBudget) {
+    console.log(`Gas budget: ${key.gasBudget.near} NEAR`);
+  }
+  console.log('---');
+});
+```
+
+### Handle Non-Existing Account
+
+```typescript
+const result = await client.safeGetAccountAccessKeys({
+  accountId: 'non-existent-account.near'
+});
+
+if (result.ok) {
+  // For non-existing accounts, the result is successful but returns empty array
+  if (result.value.accountAccessKeys.length === 0) {
+    console.log('No access keys found (account may not exist)');
+  }
+}
+```
+
+### Check for Specific Public Key
+
+```typescript
+const targetKey = 'ed25519:5BGSaf6YjVm7565VzWQHNxoyEjwr3jUpRJSGjREvU9dB';
+
+const keys = await client.getAccountAccessKeys({
+  accountId: 'alice.near'
+});
+
+const hasKey = keys.accountAccessKeys.some(
+  key => key.publicKey === targetKey
+);
+
+if (hasKey) {
+  console.log('Account has this access key');
+} else {
+  console.log('Account does not have this access key');
+}
+```
+
+### Query at Specific Block
+
+```typescript
+const keys = await client.getAccountAccessKeys({
+  accountId: 'alice.near',
+  atMomentOf: {
+    blockHeight: 123456789
+  }
+});
+
+console.log(`Keys at block ${keys.blockHeight}:`);
+console.log(`Total: ${keys.accountAccessKeys.length}`);
+```
+
+### With Request Timeout
+
+```typescript
+const controller = new AbortController();
+setTimeout(() => controller.abort(), 5000); // 5 second timeout
+
+const result = await client.safeGetAccountAccessKeys({
+  accountId: 'alice.near',
+  options: {
+    signal: controller.signal
+  }
+});
+
+if (!result.ok && result.error.kind === 'Client.GetAccountAccessKeys.Aborted') {
+  console.log('Request was aborted');
+}
+```
+
+### Audit Account Keys
+
+```typescript
+const keys = await client.getAccountAccessKeys({
+  accountId: 'alice.near'
+});
+
+console.log('=== Account Key Audit ===');
+console.log(`Account: ${keys.accountId}`);
+console.log(`Block Height: ${keys.blockHeight}`);
+console.log(`Total Keys: ${keys.accountAccessKeys.length}\n`);
+
+keys.accountAccessKeys.forEach((key, index) => {
+  console.log(`Key #${index + 1}:`);
+  console.log(`  Public Key: ${key.publicKey}`);
+  console.log(`  Type: ${key.accessType}`);
+  console.log(`  Nonce: ${key.nonce}`);
+  
+  if (key.accessType === 'FunctionCall') {
+    console.log(`  Contract: ${key.contractAccountId}`);
+    if (key.gasBudget) {
+      console.log(`  Gas Budget: ${key.gasBudget.yocto} yoctoNEAR`);
+    }
+    if (key.allowedFunctions) {
+      console.log(`  Functions: ${key.allowedFunctions.join(', ')}`);
+    }
+  }
+  console.log('');
+});
+```
+
+### Invalid Arguments Handling
+
+```typescript
+const result = await client.safeGetAccountAccessKeys({
+  accountId: 'invalid###account'
+});
+
+if (!result.ok) {
+  if (result.error.kind === 'Client.GetAccountAccessKeys.Args.InvalidSchema') {
+    console.log('Invalid account ID format');
+    console.log('Context:', result.error.context);
+  }
+}
+```

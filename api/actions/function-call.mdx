@@ -1,0 +1,397 @@
+---
+title: 'functionCall'
+description: 'Call smart contract methods on NEAR'
+---
+
+## Overview
+
+The `functionCall` action creator calls a method on a NEAR smart contract. It can pass arguments, attach NEAR tokens, and specify gas limits.
+
+## Signature
+
+```typescript
+functionCall<T>(args: {
+  functionName: string,
+  functionArgs?: T,
+  gasLimit: NearGasArgs,
+  attachedDeposit?: NearTokenArgs,
+  options?: {
+    serializeArgs?: (args: { functionArgs: T }) => Uint8Array
+  }
+}): FunctionCallAction
+```
+
+## Parameters
+
+<ParamField path="functionName" type="string" required>
+  The name of the contract method to call
+</ParamField>
+
+<ParamField path="functionArgs" type="any">
+  Arguments to pass to the function. By default, must be JSON-serializable. If omitted, no arguments are passed.
+</ParamField>
+
+<ParamField path="gasLimit" type="NearGasArgs" required>
+  Maximum gas to use for the function call. Can be specified as:
+  - `{ gas: number | string }` - In gas units
+  - `{ teraGas: number | string }` - In TGas (1 TGas = 10^12 gas)
+</ParamField>
+
+<ParamField path="attachedDeposit" type="NearTokenArgs">
+  NEAR tokens to attach to the call (default: 0). Format:
+  - `{ near: number | string }` - In NEAR
+  - `{ yoctoNear: string | bigint }` - In yoctoNEAR
+</ParamField>
+
+<ParamField path="options" type="object">
+  Additional options
+  
+  <Expandable title="properties">
+    <ParamField path="serializeArgs" type="function">
+      Custom serializer for arguments. Must return `Uint8Array`. If not provided, JSON serialization is used.
+    </ParamField>
+  </Expandable>
+</ParamField>
+
+## Returns
+
+A `FunctionCallAction` object:
+
+```typescript
+{
+  actionType: 'FunctionCall',
+  functionName: string,
+  functionArgs: Uint8Array,
+  gasLimit: NearGasArgs,
+  attachedDeposit?: NearTokenArgs
+}
+```
+
+## Basic Example
+
+```typescript
+import { functionCall, teraGas, near } from '@near-api-ts/universal';
+
+const action = functionCall({
+  functionName: 'set_status',
+  functionArgs: { message: 'Hello NEAR!' },
+  gasLimit: teraGas('30'),
+  attachedDeposit: near('0')
+});
+
+await signer.executeTransaction({
+  intent: {
+    receiverAccountId: 'contract.near',
+    action
+  }
+});
+```
+
+## View Function (Read-Only)
+
+For read-only calls that don't modify state, use the client directly:
+
+```typescript
+const result = await client.callContractReadFunction({
+  contractAccountId: 'contract.near',
+  functionName: 'get_status',
+  functionArgs: { account_id: 'alice.near' }
+});
+
+console.log('Status:', result);
+```
+
+## Change Function with Arguments
+
+```typescript
+import { functionCall, teraGas, near } from '@near-api-ts/universal';
+
+const action = functionCall({
+  functionName: 'nft_mint',
+  functionArgs: {
+    token_id: '123',
+    receiver_id: 'alice.near',
+    metadata: {
+      title: 'My NFT',
+      description: 'A special NFT',
+      media: 'https://example.com/image.png'
+    }
+  },
+  gasLimit: teraGas('100'),
+  attachedDeposit: near('0.1')
+});
+
+await signer.executeTransaction({
+  intent: {
+    receiverAccountId: 'nft-contract.near',
+    action
+  }
+});
+```
+
+## Function Without Arguments
+
+```typescript
+import { functionCall, teraGas, near } from '@near-api-ts/universal';
+
+const action = functionCall({
+  functionName: 'claim_reward',
+  gasLimit: teraGas('50'),
+  attachedDeposit: near('0')
+});
+
+await signer.executeTransaction({
+  intent: {
+    receiverAccountId: 'rewards.near',
+    action
+  }
+});
+```
+
+## Payable Function
+
+```typescript
+import { functionCall, teraGas, near } from '@near-api-ts/universal';
+
+const action = functionCall({
+  functionName: 'storage_deposit',
+  functionArgs: {
+    account_id: 'alice.near'
+  },
+  gasLimit: teraGas('30'),
+  attachedDeposit: near('0.25') // Storage deposit
+});
+
+await signer.executeTransaction({
+  intent: {
+    receiverAccountId: 'token.near',
+    action
+  }
+});
+```
+
+## Custom Serialization
+
+For binary protocols or custom encoding:
+
+```typescript
+import { functionCall, teraGas, near } from '@near-api-ts/universal';
+
+const action = functionCall({
+  functionName: 'process_data',
+  functionArgs: { data: [1, 2, 3, 4] },
+  gasLimit: teraGas('50'),
+  options: {
+    serializeArgs: ({ functionArgs }) => {
+      // Custom binary serialization
+      return new Uint8Array(functionArgs.data);
+    }
+  }
+});
+
+await signer.executeTransaction({
+  intent: {
+    receiverAccountId: 'binary-contract.near',
+    action
+  }
+});
+```
+
+## Multiple Function Calls
+
+```typescript
+import { functionCall, teraGas, near } from '@near-api-ts/universal';
+
+await signer.executeTransaction({
+  intent: {
+    receiverAccountId: 'contract.near',
+    actions: [
+      functionCall({
+        functionName: 'step_one',
+        functionArgs: { value: 1 },
+        gasLimit: teraGas('30')
+      }),
+      functionCall({
+        functionName: 'step_two',
+        functionArgs: { value: 2 },
+        gasLimit: teraGas('30')
+      }),
+      functionCall({
+        functionName: 'finalize',
+        gasLimit: teraGas('40')
+      })
+    ]
+  }
+});
+```
+
+## Getting Return Values
+
+```typescript
+import { functionCall, teraGas } from '@near-api-ts/universal';
+
+const result = await signer.executeTransaction({
+  intent: {
+    receiverAccountId: 'contract.near',
+    action: functionCall({
+      functionName: 'get_message',
+      gasLimit: teraGas('10')
+    })
+  }
+});
+
+// Parse the return value
+if (result.result.status.SuccessValue) {
+  const returnValue = JSON.parse(
+    Buffer.from(result.result.status.SuccessValue, 'base64').toString()
+  );
+  console.log('Returned:', returnValue);
+}
+```
+
+## Cross-Contract Calls
+
+```typescript
+import { functionCall, teraGas, near } from '@near-api-ts/universal';
+
+// Contract A calls Contract B
+const action = functionCall({
+  functionName: 'call_contract_b',
+  functionArgs: {
+    contract_b_account: 'contract-b.near',
+    method: 'process',
+    args: { data: 'hello' }
+  },
+  gasLimit: teraGas('200'), // Need more gas for cross-contract
+  attachedDeposit: near('1')
+});
+
+await signer.executeTransaction({
+  intent: {
+    receiverAccountId: 'contract-a.near',
+    action
+  }
+});
+```
+
+## Gas Estimation
+
+```typescript
+import { teraGas, gas } from '@near-api-ts/universal';
+
+// Using TGas (common)
+const action1 = functionCall({
+  functionName: 'simple_function',
+  gasLimit: teraGas('10') // 10 TGas
+});
+
+// Using raw gas units
+const action2 = functionCall({
+  functionName: 'simple_function',
+  gasLimit: gas('10000000000000') // 10 TGas in gas units
+});
+```
+
+<Info>
+Common gas amounts:
+- Simple operations: 10-30 TGas
+- Token transfers: 30-50 TGas
+- NFT minting: 50-100 TGas
+- Cross-contract calls: 100-200 TGas
+- Complex operations: 200-300 TGas
+</Info>
+
+## Error Handling
+
+```typescript
+import { functionCall, teraGas, isNatError } from '@near-api-ts/universal';
+
+try {
+  const action = functionCall({
+    functionName: 'risky_operation',
+    functionArgs: { amount: 100 },
+    gasLimit: teraGas('50')
+  });
+  
+  await signer.executeTransaction({
+    intent: {
+      receiverAccountId: 'contract.near',
+      action
+    }
+  });
+} catch (error) {
+  if (isNatError(error)) {
+    if (error.kind === 'CreateAction.FunctionCall.Args.InvalidSchema') {
+      console.error('Invalid function call arguments');
+    } else if (error.kind === 'CreateAction.FunctionCall.SerializeArgs.Failed') {
+      console.error('Failed to serialize arguments:', error.context);
+    }
+  }
+}
+```
+
+## Safe Variant
+
+```typescript
+import { safeFunctionCall, teraGas } from '@near-api-ts/universal';
+
+const actionResult = safeFunctionCall({
+  functionName: 'my_function',
+  functionArgs: { value: 'test' },
+  gasLimit: teraGas('30')
+});
+
+if (!actionResult.ok) {
+  console.error('Invalid action:', actionResult.error.kind);
+  return;
+}
+
+const result = await signer.safeExecuteTransaction({
+  intent: {
+    receiverAccountId: 'contract.near',
+    action: actionResult.value
+  }
+});
+```
+
+## Common Errors
+
+### Action Creation Errors
+
+- `CreateAction.FunctionCall.Args.InvalidSchema` - Invalid parameters
+- `CreateAction.FunctionCall.SerializeArgs.Failed` - Serialization failed
+- `CreateAction.FunctionCall.SerializeArgs.InvalidOutput` - Custom serializer didn't return Uint8Array
+- `CreateAction.FunctionCall.Internal` - Internal error
+
+### Execution Errors
+
+- Contract panics or assertion failures
+- Out of gas errors
+- Insufficient attached deposit
+- Contract method not found
+
+## Best Practices
+
+<Check>
+**DO:**
+- Always specify appropriate gas limits
+- Use teraGas helper for readability
+- Validate function arguments before calling
+- Handle contract panics gracefully
+- Test gas usage on testnet first
+</Check>
+
+<Warning>
+**DON'T:**
+- Don't use maximum gas for simple operations
+- Don't forget to attach deposit for payable functions
+- Don't assume function calls always succeed
+- Don't use view functions with transactions (use client.callContractReadFunction)
+</Warning>
+
+## See Also
+
+- [executeTransaction](/api/signers/execute-transaction) - Execute transactions
+- [deployContract](/api/actions/deploy-contract) - Deploy contracts
+- [transfer](/api/actions/transfer) - Send NEAR tokens
+- [Gas Helpers](/api/helpers/near-gas) - Gas amount helpers

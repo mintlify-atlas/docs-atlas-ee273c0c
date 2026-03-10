@@ -1,0 +1,337 @@
+---
+title: "Crypto Types"
+description: "TypeScript type definitions for cryptographic primitives"
+---
+
+Type definitions for cryptographic keys, signatures, and related functionality in the NEAR API.
+
+## Overview
+
+NEAR supports two elliptic curve cryptography algorithms:
+- **Ed25519**: Fast, secure, recommended for most use cases
+- **Secp256k1**: Used for Bitcoin and Ethereum compatibility
+
+All cryptographic values are encoded as `curve:base58` strings.
+
+## Public Keys
+
+### PublicKey
+
+Union type for all supported public key formats.
+
+```typescript
+type PublicKey = Ed25519PublicKey | Secp256k1PublicKey;
+
+type Ed25519PublicKey = `ed25519:${Base58String}`;
+type Secp256k1PublicKey = `secp256k1:${Base58String}`;
+
+type Base58String = string;
+```
+
+**Examples:**
+
+```typescript
+// Ed25519 public key
+const ed25519Key: PublicKey = 'ed25519:DcA2MzgpJbrUATQLLceocVckhhAqrkingax4oJ9kZ847';
+
+// Secp256k1 public key
+const secp256k1Key: PublicKey = 'secp256k1:5ftgm7wYK5gtVqq1kxMGy7gSudkrfYCbpsjL6sH1nwx2';
+```
+
+### Usage
+
+```typescript
+import { randomEd25519KeyPair } from '@near-api/universal';
+
+const keyPair = randomEd25519KeyPair();
+const publicKey: PublicKey = keyPair.publicKey;
+
+console.log(publicKey); // "ed25519:..."
+```
+
+## Private Keys
+
+### PrivateKey
+
+Union type for all supported private key formats.
+
+```typescript
+type PrivateKey = Ed25519PrivateKey | Secp256k1PrivateKey;
+
+type Ed25519PrivateKey = `ed25519:${Base58String}`;
+type Secp256k1PrivateKey = `secp256k1:${Base58String}`;
+```
+
+**Security Warning:** Private keys should be stored securely and never exposed in client-side code or version control.
+
+**Example:**
+
+```typescript
+import { keyPair } from '@near-api/universal';
+
+const privateKey: PrivateKey = 'ed25519:3D4YudU...';
+const kp = keyPair(privateKey);
+```
+
+## Signatures
+
+### Signature
+
+Union type for all supported signature formats.
+
+```typescript
+type Signature = Ed25519Signature | Secp256k1Signature;
+
+type Ed25519Signature = `ed25519:${Base58String}`;
+type Secp256k1Signature = `secp256k1:${Base58String}`;
+```
+
+**Example:**
+
+```typescript
+import { randomEd25519KeyPair } from '@near-api/universal';
+
+const keyPair = randomEd25519KeyPair();
+const signOutput = keyPair.sign('48656c6c6f'); // "Hello" in hex
+
+const signature: Signature = signOutput.signature;
+console.log(signature); // "ed25519:..."
+```
+
+## Curve Types
+
+### Curve
+
+```typescript
+type Curve = 'ed25519' | 'secp256k1';
+
+type Ed25519Curve = 'ed25519';
+type Secp256k1Curve = 'secp256k1';
+```
+
+**Example:**
+
+```typescript
+const curve: Curve = 'ed25519';
+```
+
+### CurveString
+
+Generic format for curve-prefixed base58 strings.
+
+```typescript
+type CurveString = Ed25519CurveString | Secp256k1CurveString;
+
+type Ed25519CurveString = `ed25519:${Base58String}`;
+type Secp256k1CurveString = `secp256k1:${Base58String}`;
+```
+
+## Native Types
+
+Internal binary representations used for serialization.
+
+### NativePublicKey
+
+```typescript
+type NativePublicKey = 
+  | NativeEd25519PublicKey 
+  | NativeSecp256k1PublicKey;
+
+type NativeEd25519PublicKey = {
+  ed25519Key: { data: Uint8Array };
+};
+
+type NativeSecp256k1PublicKey = {
+  secp256k1Key: { data: Uint8Array };
+};
+```
+
+These types are used internally for Borsh serialization and are not typically used in application code.
+
+### NativeSignature
+
+```typescript
+type NativeSignature = 
+  | NativeEd25519Signature 
+  | NativeSecp256k1Signature;
+
+type NativeEd25519Signature = {
+  ed25519Signature: { data: Uint8Array };
+};
+
+type NativeSecp256k1Signature = {
+  secp256k1Signature: { data: Uint8Array };
+};
+```
+
+## Message Types
+
+### Hex
+
+Data for signing can be either raw bytes or hexadecimal string.
+
+```typescript
+type Hex = Uint8Array | string;
+```
+
+**Examples:**
+
+```typescript
+import { randomEd25519KeyPair } from '@near-api/universal';
+
+const keyPair = randomEd25519KeyPair();
+
+// Sign hex string
+const sig1 = keyPair.sign('48656c6c6f');
+
+// Sign Uint8Array
+const sig2 = keyPair.sign(new Uint8Array([72, 101, 108, 108, 111]));
+```
+
+## Key Pair Types
+
+See [Key Pair Helpers](/api/helpers/key-pair) for key pair creation functions.
+
+### KeyPair
+
+```typescript
+type KeyPair = {
+  publicKey: PublicKey;
+  privateKey: PrivateKey;
+  sign: Sign;
+  safeSign: SafeSign;
+};
+```
+
+### Sign Functions
+
+```typescript
+type Sign = (message: Hex) => SignOutput;
+type SafeSign = (message: Hex) => Result<SignOutput, SignError>;
+
+type SignOutput = {
+  signature: Signature;
+  curve: Curve;
+  u8Signature: Uint8Array;
+};
+```
+
+## Format Specifications
+
+### Base58 Encoding
+
+NEAR uses Bitcoin's Base58 alphabet:
+```
+123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz
+```
+
+Note: The characters `0`, `O`, `I`, and `l` are excluded to avoid confusion.
+
+### Key Lengths
+
+**Ed25519:**
+- Private key: 64 bytes (32 bytes secret + 32 bytes public)
+- Public key: 32 bytes
+- Signature: 64 bytes
+
+**Secp256k1:**
+- Private key: 64 bytes (32 bytes secret + 32 bytes public)
+- Public key: 64 bytes (uncompressed without 0x04 header)
+- Signature: 64 bytes
+
+## Examples
+
+### Working with Keys
+
+```typescript
+import { 
+  randomEd25519KeyPair, 
+  randomSecp256k1KeyPair,
+  keyPair 
+} from '@near-api/universal';
+
+// Generate Ed25519 key pair
+const ed25519Kp = randomEd25519KeyPair();
+console.log('Public key:', ed25519Kp.publicKey);
+console.log('Private key:', ed25519Kp.privateKey);
+
+// Generate Secp256k1 key pair
+const secp256k1Kp = randomSecp256k1KeyPair();
+console.log('Public key:', secp256k1Kp.publicKey);
+console.log('Private key:', secp256k1Kp.privateKey);
+
+// Restore from private key
+const restoredKp = keyPair(ed25519Kp.privateKey);
+```
+
+### Signing Messages
+
+```typescript
+import { randomEd25519KeyPair } from '@near-api/universal';
+
+const keyPair = randomEd25519KeyPair();
+
+// Sign a message (hex string)
+const message = '48656c6c6f'; // "Hello" in hex
+const { signature, curve, u8Signature } = keyPair.sign(message);
+
+console.log('Signature:', signature);
+console.log('Curve:', curve);
+console.log('Raw bytes:', u8Signature);
+```
+
+### Type Guards
+
+```typescript
+function getCurve(key: PublicKey): Curve {
+  if (key.startsWith('ed25519:')) {
+    return 'ed25519';
+  } else if (key.startsWith('secp256k1:')) {
+    return 'secp256k1';
+  }
+  throw new Error('Invalid key format');
+}
+
+const publicKey: PublicKey = 'ed25519:...';
+console.log(getCurve(publicKey)); // "ed25519"
+```
+
+### Extracting Curve from Key
+
+```typescript
+function extractCurveAndData(key: PublicKey): [Curve, string] {
+  const [curve, data] = key.split(':') as [Curve, string];
+  return [curve, data];
+}
+
+const publicKey: PublicKey = 'ed25519:DcA2MzgpJbrUATQLLceocVckhhAqrkingax4oJ9kZ847';
+const [curve, base58Data] = extractCurveAndData(publicKey);
+
+console.log('Curve:', curve);     // "ed25519"
+console.log('Data:', base58Data); // "DcA2MzgpJbrUATQLLceocVckhhAqrkingax4oJ9kZ847"
+```
+
+## Algorithm Comparison
+
+| Feature | Ed25519 | Secp256k1 |
+|---------|---------|----------|
+| Speed | Faster | Slower |
+| Signature Size | 64 bytes | 64 bytes |
+| Public Key Size | 32 bytes | 64 bytes |
+| Security | High | High |
+| Use Case | Default | Ethereum compatibility |
+
+## Best Practices
+
+1. **Use Ed25519 by default**: It's faster and produces smaller keys
+2. **Never expose private keys**: Store securely, never commit to version control
+3. **Use safe variants**: Prefer `safeSign()` for better error handling
+4. **Validate key format**: Always validate curve prefix when accepting keys from external sources
+5. **Key rotation**: Consider rotating keys periodically for enhanced security
+
+## Related
+
+- [Key Pair Helpers](/api/helpers/key-pair)
+- [Transaction Types](/api/types/transaction)
+- [Common Types](/api/types/common)
+- [Memory Signer](/api/signers/memory-signer)

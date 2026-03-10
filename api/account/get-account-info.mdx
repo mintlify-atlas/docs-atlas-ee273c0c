@@ -1,0 +1,247 @@
+---
+title: getAccountInfo
+description: Retrieve account information including balance, storage usage, and contract data
+---
+
+## Overview
+
+Retrieves comprehensive information about a NEAR account, including total and available balance, storage usage, and contract deployment details.
+
+## Method Signatures
+
+### Throwable Variant
+
+```typescript
+client.getAccountInfo(args: GetAccountInfoArgs): Promise<GetAccountInfoOutput>
+```
+
+Throws an error if the operation fails.
+
+### Safe Variant
+
+```typescript
+client.safeGetAccountInfo(args: GetAccountInfoArgs): Promise<Result<GetAccountInfoOutput, GetAccountInfoError>>
+```
+
+Returns a `Result` object that contains either the success value or error, never throws.
+
+## Parameters
+
+<ParamField path="accountId" type="AccountId" required>
+  The account ID to query information for.
+</ParamField>
+
+<ParamField path="atMomentOf" type="BlockReference">
+  Query account state at a specific block. Can be:
+  - `'LatestOptimisticBlock'` - Latest optimistic block (default)
+  - `'LatestNearFinalBlock'` - Latest near-final block
+  - `'LatestFinalBlock'` - Latest final block
+  - `{ blockHash: BlockHash }` - Specific block by hash
+  - `{ blockHeight: BlockHeight }` - Specific block by height
+  - `'EarliestAvailableBlock'` - Earliest available block
+  - `'GenesisBlock'` - Genesis block
+</ParamField>
+
+<ParamField path="policies" type="object">
+  Configuration for transport behavior.
+  
+  <ParamField path="policies.transport" type="PartialTransportPolicy">
+    Transport-specific policies like retry behavior and timeout settings.
+  </ParamField>
+</ParamField>
+
+<ParamField path="options" type="object">
+  Additional execution options.
+  
+  <ParamField path="options.signal" type="AbortSignal">
+    AbortSignal to cancel the request.
+  </ParamField>
+</ParamField>
+
+## Return Type
+
+<ResponseField name="blockHash" type="BlockHash">
+  Hash of the block where the account state was queried.
+</ResponseField>
+
+<ResponseField name="blockHeight" type="BlockHeight">
+  Height of the block where the account state was queried.
+</ResponseField>
+
+<ResponseField name="accountId" type="AccountId">
+  The queried account ID.
+</ResponseField>
+
+<ResponseField name="accountInfo" type="object">
+  Detailed account information.
+  
+  <ResponseField name="accountInfo.balance" type="object">
+    Balance breakdown for the account.
+    
+    <ResponseField name="accountInfo.balance.total" type="NearToken">
+      Total balance including locked funds.
+    </ResponseField>
+    
+    <ResponseField name="accountInfo.balance.available" type="NearToken">
+      Available balance that can be transferred or used.
+    </ResponseField>
+    
+    <ResponseField name="accountInfo.balance.locked" type="object">
+      Locked balance details.
+      
+      <ResponseField name="accountInfo.balance.locked.amount" type="NearToken">
+        Total locked amount.
+      </ResponseField>
+      
+      <ResponseField name="accountInfo.balance.locked.breakdown" type="object">
+        Breakdown of locked funds.
+        
+        <ResponseField name="accountInfo.balance.locked.breakdown.validatorStake" type="NearToken">
+          Amount locked in validator stake.
+        </ResponseField>
+        
+        <ResponseField name="accountInfo.balance.locked.breakdown.storageDeposit" type="NearToken">
+          Amount locked for storage deposit.
+        </ResponseField>
+      </ResponseField>
+    </ResponseField>
+  </ResponseField>
+  
+  <ResponseField name="accountInfo.usedStorageBytes" type="number">
+    Number of bytes used for account storage.
+  </ResponseField>
+  
+  <ResponseField name="accountInfo.contractHash" type="CryptoHash" optional>
+    Hash of the deployed contract code (if account has a contract).
+  </ResponseField>
+  
+  <ResponseField name="accountInfo.globalContractHash" type="CryptoHash" optional>
+    Hash of the global contract (if using shared contract).
+  </ResponseField>
+  
+  <ResponseField name="accountInfo.globalContractAccountId" type="AccountId" optional>
+    Account ID of the global contract owner (if using shared contract).
+  </ResponseField>
+</ResponseField>
+
+<ResponseField name="rawRpcResult" type="RpcQueryViewAccountResult">
+  Raw RPC result from the NEAR node.
+</ResponseField>
+
+## Error Codes
+
+When using `safeGetAccountInfo`, the following error codes may be returned:
+
+### Client Errors
+
+- `Client.GetAccountInfo.Args.InvalidSchema` - Invalid arguments provided
+- `Client.GetAccountInfo.StoragePricePerByte.NotLoaded` - Storage price data not loaded
+- `Client.GetAccountInfo.PreferredRpc.NotFound` - Preferred RPC endpoint not found
+- `Client.GetAccountInfo.Timeout` - Request timed out
+- `Client.GetAccountInfo.Aborted` - Request was aborted
+- `Client.GetAccountInfo.Exhausted` - All retry attempts exhausted
+
+### RPC Errors
+
+- `Client.GetAccountInfo.Rpc.Account.NotFound` - Account does not exist at specified block
+- `Client.GetAccountInfo.Rpc.NotSynced` - Node is not synced
+- `Client.GetAccountInfo.Rpc.Shard.NotTracked` - Shard is not tracked by this node
+- `Client.GetAccountInfo.Rpc.Block.GarbageCollected` - Block has been garbage collected
+- `Client.GetAccountInfo.Rpc.Block.NotFound` - Block not found
+
+### Internal Errors
+
+- `Client.GetAccountInfo.Internal` - Internal library error
+
+## Examples
+
+### Basic Usage (Throwable)
+
+```typescript
+const accountInfo = await client.getAccountInfo({
+  accountId: 'alice.near'
+});
+
+console.log(`Total balance: ${accountInfo.accountInfo.balance.total.near} NEAR`);
+console.log(`Available: ${accountInfo.accountInfo.balance.available.near} NEAR`);
+console.log(`Storage used: ${accountInfo.accountInfo.usedStorageBytes} bytes`);
+```
+
+### Safe Variant with Error Handling
+
+```typescript
+const result = await client.safeGetAccountInfo({
+  accountId: 'alice.near'
+});
+
+if (result.ok) {
+  const { accountInfo } = result.value;
+  console.log(`Total: ${accountInfo.balance.total.near} NEAR`);
+  console.log(`Available: ${accountInfo.balance.available.near} NEAR`);
+  console.log(`Locked: ${accountInfo.balance.locked.amount.near} NEAR`);
+  console.log(`Staked: ${accountInfo.balance.locked.breakdown.validatorStake.near} NEAR`);
+} else {
+  if (result.error.kind === 'Client.GetAccountInfo.Rpc.Account.NotFound') {
+    console.log('Account does not exist');
+  } else {
+    console.error('Error:', result.error.kind);
+  }
+}
+```
+
+### Query at Specific Block
+
+```typescript
+const result = await client.getAccountInfo({
+  accountId: 'alice.near',
+  atMomentOf: {
+    blockHeight: 123456789
+  }
+});
+
+console.log(`Balance at block ${result.blockHeight}: ${result.accountInfo.balance.total.near} NEAR`);
+```
+
+### Check for Contract Deployment
+
+```typescript
+const info = await client.getAccountInfo({
+  accountId: 'contract.near'
+});
+
+if (info.accountInfo.contractHash) {
+  console.log(`Contract deployed with hash: ${info.accountInfo.contractHash}`);
+} else {
+  console.log('No contract deployed');
+}
+```
+
+### With Request Timeout
+
+```typescript
+const controller = new AbortController();
+setTimeout(() => controller.abort(), 5000); // 5 second timeout
+
+const result = await client.safeGetAccountInfo({
+  accountId: 'alice.near',
+  options: {
+    signal: controller.signal
+  }
+});
+
+if (!result.ok && result.error.kind === 'Client.GetAccountInfo.Aborted') {
+  console.log('Request was aborted');
+}
+```
+
+### Query at Latest Final Block
+
+```typescript
+const info = await client.getAccountInfo({
+  accountId: 'alice.near',
+  atMomentOf: 'LatestFinalBlock'
+});
+
+console.log(`Final block height: ${info.blockHeight}`);
+console.log(`Balance: ${info.accountInfo.balance.total.near} NEAR`);
+```

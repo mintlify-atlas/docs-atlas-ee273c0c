@@ -1,0 +1,367 @@
+---
+title: 'deleteKey'
+description: 'Remove an access key from a NEAR account'
+---
+
+## Overview
+
+The `deleteKey` action removes an access key from a NEAR account. This is useful for revoking access, rotating keys, or cleaning up unused keys.
+
+## Signature
+
+```typescript
+deleteKey(args: {
+  publicKey: string
+}): DeleteKeyAction
+```
+
+## Parameters
+
+<ParamField path="publicKey" type="string" required>
+  The public key to remove. Format: `ed25519:` or `secp256k1:` followed by the base58-encoded key.
+</ParamField>
+
+## Returns
+
+A `DeleteKeyAction` object:
+
+```typescript
+{
+  actionType: 'DeleteKey',
+  publicKey: string
+}
+```
+
+## Basic Example
+
+```typescript
+import { deleteKey } from '@near-api-ts/universal';
+
+const action = deleteKey({
+  publicKey: 'ed25519:HLjUfJG6pWgipfg4fJ2Dd4Bco48Y9QT2z5rFCvXYqzj9'
+});
+
+await signer.executeTransaction({
+  intent: {
+    receiverAccountId: 'alice.near',
+    action
+  }
+});
+
+console.log('Key deleted successfully');
+```
+
+## Revoke App Access
+
+Remove a function call key used by an application:
+
+```typescript
+import { deleteKey } from '@near-api-ts/universal';
+
+const appPublicKey = 'ed25519:AppKeyHere...';
+
+await signer.executeTransaction({
+  intent: {
+    receiverAccountId: 'alice.near',
+    action: deleteKey({ publicKey: appPublicKey })
+  }
+});
+
+console.log('App access revoked');
+```
+
+## Key Rotation
+
+Replace an old key with a new one:
+
+```typescript
+import { 
+  addFullAccessKey,
+  deleteKey,
+  randomEd25519KeyPair
+} from '@near-api-ts/universal';
+
+const newKeyPair = randomEd25519KeyPair();
+const oldPublicKey = 'ed25519:OldKeyHere...';
+
+// Add new key and remove old key atomically
+await signer.executeTransaction({
+  intent: {
+    receiverAccountId: 'alice.near',
+    actions: [
+      addFullAccessKey({ publicKey: newKeyPair.publicKey }),
+      deleteKey({ publicKey: oldPublicKey })
+    ]
+  }
+});
+
+console.log('Key rotated successfully');
+console.log('New private key:', newKeyPair.secretKey);
+```
+
+<Warning>
+Always add the new key BEFORE deleting the old one. If you delete the current signing key first, the transaction will fail.
+</Warning>
+
+## Remove Multiple Keys
+
+```typescript
+import { deleteKey } from '@near-api-ts/universal';
+
+const keysToRemove = [
+  'ed25519:Key1...',
+  'ed25519:Key2...',
+  'ed25519:Key3...'
+];
+
+await signer.executeTransaction({
+  intent: {
+    receiverAccountId: 'alice.near',
+    actions: keysToRemove.map(publicKey => 
+      deleteKey({ publicKey })
+    )
+  }
+});
+
+console.log(`Removed ${keysToRemove.length} keys`);
+```
+
+## Clean Up Unused Keys
+
+```typescript
+import { deleteKey } from '@near-api-ts/universal';
+
+// Get all access keys for the account
+const accessKeys = await client.getAccessKeys({
+  accountId: 'alice.near'
+});
+
+// Filter for old or unused keys
+const oldKeys = accessKeys.filter(key => {
+  // Your logic to identify old keys
+  return isOldOrUnused(key);
+});
+
+// Remove old keys
+if (oldKeys.length > 0) {
+  await signer.executeTransaction({
+    intent: {
+      receiverAccountId: 'alice.near',
+      actions: oldKeys.map(key => 
+        deleteKey({ publicKey: key.publicKey })
+      )
+    }
+  });
+  
+  console.log(`Cleaned up ${oldKeys.length} old keys`);
+}
+```
+
+## Revoke Before Account Deletion
+
+```typescript
+import { 
+  deleteKey,
+  deleteAccount
+} from '@near-api-ts/universal';
+
+const accountKeys = await client.getAccessKeys({
+  accountId: 'temp.alice.near'
+});
+
+const keysToDelete = accountKeys
+  .map(k => k.publicKey)
+  .filter(pk => pk !== signerPublicKey); // Keep signer key until last
+
+await signer.executeTransaction({
+  intent: {
+    receiverAccountId: 'temp.alice.near',
+    actions: [
+      ...keysToDelete.map(pk => deleteKey({ publicKey: pk })),
+      deleteAccount({ beneficiaryAccountId: 'alice.near' })
+    ]
+  }
+});
+```
+
+## List Keys Before Deletion
+
+```typescript
+import { deleteKey } from '@near-api-ts/universal';
+
+// Get current access keys
+const keys = await client.getAccessKeys({
+  accountId: 'alice.near'
+});
+
+console.log('Current access keys:');
+keys.forEach((key, index) => {
+  console.log(`${index + 1}. ${key.publicKey}`);
+  console.log(`   Type: ${key.accessKey.permission}`);
+});
+
+// Delete a specific key
+const keyToDelete = keys[0].publicKey;
+
+await signer.executeTransaction({
+  intent: {
+    receiverAccountId: 'alice.near',
+    action: deleteKey({ publicKey: keyToDelete })
+  }
+});
+```
+
+## Error Handling
+
+```typescript
+import { deleteKey, isNatError } from '@near-api-ts/universal';
+
+try {
+  await signer.executeTransaction({
+    intent: {
+      receiverAccountId: 'alice.near',
+      action: deleteKey({ 
+        publicKey: 'ed25519:KeyToDelete...' 
+      })
+    }
+  });
+  
+  console.log('Key deleted successfully');
+} catch (error) {
+  if (isNatError(error)) {
+    if (error.kind === 'CreateAction.DeleteKey.Args.InvalidSchema') {
+      console.error('Invalid public key format');
+    } else {
+      console.error('Error:', error.kind);
+    }
+  }
+}
+```
+
+## Safe Variant
+
+```typescript
+import { safeDeleteKey } from '@near-api-ts/universal';
+
+const actionResult = safeDeleteKey({ 
+  publicKey: 'ed25519:KeyToDelete...' 
+});
+
+if (!actionResult.ok) {
+  console.error('Invalid delete key action:', actionResult.error.kind);
+  return;
+}
+
+const result = await signer.safeExecuteTransaction({
+  intent: {
+    receiverAccountId: 'alice.near',
+    action: actionResult.value
+  }
+});
+
+if (result.ok) {
+  console.log('Key deleted:', result.value.transactionHash);
+} else {
+  console.error('Deletion failed:', result.error.kind);
+}
+```
+
+## Checking Key Existence
+
+```typescript
+import { deleteKey } from '@near-api-ts/universal';
+
+const publicKeyToDelete = 'ed25519:KeyToCheck...';
+
+try {
+  // Check if key exists
+  const accessKey = await client.getAccessKey({
+    accountId: 'alice.near',
+    publicKey: publicKeyToDelete
+  });
+  
+  if (accessKey) {
+    // Key exists, delete it
+    await signer.executeTransaction({
+      intent: {
+        receiverAccountId: 'alice.near',
+        action: deleteKey({ publicKey: publicKeyToDelete })
+      }
+    });
+    console.log('Key deleted');
+  }
+} catch (error) {
+  console.log('Key does not exist');
+}
+```
+
+## Common Errors
+
+- `CreateAction.DeleteKey.Args.InvalidSchema` - Invalid public key format
+- `CreateAction.DeleteKey.Internal` - Internal error
+- Key doesn't exist - Trying to delete a non-existent key
+- Cannot delete last full access key - Would lock account
+- Signer key deleted - Deleted the key used to sign the transaction
+
+## Important Warnings
+
+<Warning>
+**Never delete all full access keys from an account.** If you do, you'll permanently lose access to the account. NEAR requires at least one way to sign transactions.
+</Warning>
+
+<Warning>
+**Don't delete the signing key in the same transaction.** If you delete the key you're using to sign the transaction before adding a new one, the transaction will fail.
+</Warning>
+
+<Warning>
+**Transaction order matters.** When rotating keys, always add the new key BEFORE deleting the old one:
+```typescript
+// ✅ Correct order
+actions: [
+  addFullAccessKey({ publicKey: newKey }),
+  deleteKey({ publicKey: oldKey })
+]
+
+// ❌ Wrong order - will fail
+actions: [
+  deleteKey({ publicKey: oldKey }),
+  addFullAccessKey({ publicKey: newKey })
+]
+```
+</Warning>
+
+## Best Practices
+
+<Check>
+**DO:**
+- Check key existence before deletion
+- Keep at least one full access key
+- Add new keys before deleting old ones
+- Clean up unused keys periodically
+- Revoke compromised keys immediately
+- Verify the key to delete is correct
+</Check>
+
+<Warning>
+**DON'T:**
+- Don't delete all access keys
+- Don't delete the signing key first
+- Don't delete keys without verification
+- Don't forget to update your key storage after rotation
+- Don't rush key rotation - test on testnet first
+</Warning>
+
+## Key Management Tips
+
+1. **Regular Audits**: Periodically review and clean up unused keys
+2. **Key Rotation**: Rotate keys every 3-6 months for security
+3. **Emergency Keys**: Keep a backup full access key in secure storage
+4. **App Keys**: Use function call keys for applications, not full access keys
+5. **Documentation**: Document which keys are used where
+
+## See Also
+
+- [executeTransaction](/api/signers/execute-transaction) - Execute transactions
+- [addFullAccessKey](/api/actions/add-key) - Add full access keys
+- [addFunctionCallKey](/api/actions/add-key) - Add function call keys
+- [deleteAccount](/api/actions/delete-account) - Delete accounts

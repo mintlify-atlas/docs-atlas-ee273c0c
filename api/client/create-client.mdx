@@ -1,0 +1,335 @@
+---
+title: createClient
+description: Create a custom NEAR API client with your own RPC endpoints and transport policies
+---
+
+`createClient` creates a new Client instance with custom configuration. This gives you full control over RPC endpoints, retry behavior, timeouts, and failover strategies.
+
+## Signature
+
+```typescript
+function createClient(args: CreateClientArgs): Client
+```
+
+### Parameters
+
+<ParamField path="args" type="CreateClientArgs" required>
+  Configuration for the client
+  
+  <Expandable title="properties">
+    <ParamField path="transport" type="CreateTransportArgs" required>
+      Transport configuration including RPC endpoints and policies
+      
+      <Expandable title="properties">
+        <ParamField path="rpcEndpoints" type="RpcEndpoints" required>
+          RPC endpoint configuration
+          
+          <Expandable title="properties">
+            <ParamField path="regular" type="RpcEndpoint[]" optional>
+              Regular (non-archival) RPC endpoints
+            </ParamField>
+            
+            <ParamField path="archival" type="RpcEndpoint[]" optional>
+              Archival RPC endpoints for historical data
+            </ParamField>
+          </Expandable>
+          
+          <Info>You must provide at least one of `regular` or `archival` endpoints.</Info>
+        </ParamField>
+        
+        <ParamField path="policy" type="PartialTransportPolicy" optional>
+          Transport policy configuration (timeouts, retries, failover)
+          
+          <Expandable title="properties">
+            <ParamField path="rpcTypePreferences" type="RpcTypePreferences" optional>
+              Preferred order of RPC types to try. Options:
+              - `['Regular', 'Archival']` - Try regular first, then archival (default)
+              - `['Archival', 'Regular']` - Try archival first, then regular
+              - `['Regular']` - Only use regular endpoints
+              - `['Archival']` - Only use archival endpoints
+            </ParamField>
+            
+            <ParamField path="timeouts" type="object" optional>
+              Timeout configuration
+              
+              <Expandable title="properties">
+                <ParamField path="requestMs" type="number" optional>
+                  Total request timeout in milliseconds (default: 30000)
+                </ParamField>
+                
+                <ParamField path="attemptMs" type="number" optional>
+                  Individual attempt timeout in milliseconds (default: 5000)
+                </ParamField>
+              </Expandable>
+            </ParamField>
+            
+            <ParamField path="rpc" type="object" optional>
+              RPC retry configuration
+              
+              <Expandable title="properties">
+                <ParamField path="maxAttempts" type="number" optional>
+                  Maximum retry attempts per RPC endpoint (default: 2)
+                </ParamField>
+                
+                <ParamField path="retryBackoff" type="object" optional>
+                  Exponential backoff configuration
+                  
+                  <Expandable title="properties">
+                    <ParamField path="minDelayMs" type="number" optional>
+                      Minimum delay between retries in milliseconds (default: 100)
+                    </ParamField>
+                    
+                    <ParamField path="maxDelayMs" type="number" optional>
+                      Maximum delay between retries in milliseconds (default: 500)
+                    </ParamField>
+                    
+                    <ParamField path="multiplier" type="number" optional>
+                      Backoff multiplier (default: 3)
+                    </ParamField>
+                  </Expandable>
+                </ParamField>
+              </Expandable>
+            </ParamField>
+            
+            <ParamField path="failover" type="object" optional>
+              Failover configuration
+              
+              <Expandable title="properties">
+                <ParamField path="maxRounds" type="number" optional>
+                  Maximum rounds through all RPC endpoints (default: 2)
+                </ParamField>
+                
+                <ParamField path="nextRpcDelayMs" type="number" optional>
+                  Delay before trying next RPC endpoint in milliseconds (default: 200)
+                </ParamField>
+                
+                <ParamField path="nextRoundDelayMs" type="number" optional>
+                  Delay before starting next round in milliseconds (default: 200)
+                </ParamField>
+              </Expandable>
+            </ParamField>
+          </Expandable>
+        </ParamField>
+      </Expandable>
+    </ParamField>
+  </Expandable>
+</ParamField>
+
+### Returns
+
+<ResponseField name="Client" type="Client">
+  A fully configured Client instance with all methods available
+</ResponseField>
+
+## RpcEndpoint Type
+
+```typescript
+type RpcEndpoint = {
+  url: string;
+  headers?: Record<string, string>;
+};
+```
+
+<ParamField path="url" type="string" required>
+  The RPC endpoint URL
+</ParamField>
+
+<ParamField path="headers" type="Record<string, string>" optional>
+  Custom HTTP headers to include with requests (e.g., API keys)
+</ParamField>
+
+## Examples
+
+### Basic Configuration
+
+```typescript
+import { createClient } from 'near-api-ts';
+
+const client = createClient({
+  transport: {
+    rpcEndpoints: {
+      regular: [
+        { url: 'https://rpc.testnet.near.org' }
+      ]
+    }
+  }
+});
+```
+
+### Multiple Endpoints with Failover
+
+```typescript
+const client = createClient({
+  transport: {
+    rpcEndpoints: {
+      regular: [
+        { url: 'https://test.rpc.fastnear.com' },
+        { url: 'https://rpc.testnet.near.org' }
+      ],
+      archival: [
+        { url: 'https://archival-rpc.testnet.near.org' }
+      ]
+    }
+  }
+});
+```
+
+### Custom Headers (API Keys)
+
+```typescript
+const client = createClient({
+  transport: {
+    rpcEndpoints: {
+      regular: [
+        {
+          url: 'https://near-testnet.infura.io/v3/YOUR_PROJECT_ID',
+          headers: {
+            'Authorization': 'Bearer YOUR_API_KEY'
+          }
+        }
+      ]
+    }
+  }
+});
+```
+
+### Custom Transport Policy
+
+```typescript
+const client = createClient({
+  transport: {
+    rpcEndpoints: {
+      regular: [{ url: 'https://rpc.testnet.near.org' }],
+      archival: [{ url: 'https://archival-rpc.testnet.near.org' }]
+    },
+    policy: {
+      // Prefer archival endpoints
+      rpcTypePreferences: ['Archival', 'Regular'],
+      
+      // Increase timeouts for slow networks
+      timeouts: {
+        requestMs: 60_000,  // 60 seconds
+        attemptMs: 10_000   // 10 seconds
+      },
+      
+      // More aggressive retries
+      rpc: {
+        maxAttempts: 3,
+        retryBackoff: {
+          minDelayMs: 200,
+          maxDelayMs: 1000,
+          multiplier: 2
+        }
+      },
+      
+      // More failover rounds
+      failover: {
+        maxRounds: 3,
+        nextRpcDelayMs: 100,
+        nextRoundDelayMs: 500
+      }
+    }
+  }
+});
+```
+
+### Archival-Only Configuration
+
+```typescript
+const client = createClient({
+  transport: {
+    rpcEndpoints: {
+      archival: [{ url: 'https://archival-rpc.testnet.near.org' }]
+    },
+    policy: {
+      rpcTypePreferences: ['Archival']
+    }
+  }
+});
+```
+
+## Default Transport Policy
+
+If you don't provide a custom policy, the following defaults are used:
+
+```typescript
+{
+  rpcTypePreferences: ['Regular', 'Archival'],
+  timeouts: {
+    requestMs: 30_000,   // 30 seconds
+    attemptMs: 5_000     // 5 seconds
+  },
+  rpc: {
+    maxAttempts: 2,
+    retryBackoff: {
+      minDelayMs: 100,
+      maxDelayMs: 500,
+      multiplier: 3
+    }
+  },
+  failover: {
+    maxRounds: 2,
+    nextRpcDelayMs: 200,
+    nextRoundDelayMs: 200
+  }
+}
+```
+
+## Error Handling
+
+The `createClient` function throws if:
+
+- Invalid arguments are provided (fails schema validation)
+- An internal error occurs during client initialization
+
+```typescript
+try {
+  const client = createClient({
+    transport: {
+      rpcEndpoints: {
+        regular: [{ url: 'https://rpc.testnet.near.org' }]
+      }
+    }
+  });
+} catch (error) {
+  if (error.kind === 'CreateClient.Args.InvalidSchema') {
+    console.error('Invalid configuration:', error.context.zodError);
+  } else if (error.kind === 'CreateClient.Internal') {
+    console.error('Internal error:', error.context.cause);
+  }
+}
+```
+
+## Safe Variant
+
+For applications that prefer Result types over exceptions, use `safeCreateClient`:
+
+```typescript
+import { safeCreateClient } from 'near-api-ts';
+
+const result = safeCreateClient({
+  transport: {
+    rpcEndpoints: {
+      regular: [{ url: 'https://rpc.testnet.near.org' }]
+    }
+  }
+});
+
+if (result.ok) {
+  const client = result.value;
+  // Use client
+} else {
+  console.error('Failed to create client:', result.error);
+}
+```
+
+## Related
+
+<CardGroup cols={2}>
+  <Card title="Network Presets" icon="network-wired" href="/api/client/presets">
+    Use pre-configured clients for testnet and mainnet
+  </Card>
+  <Card title="Client Overview" icon="book" href="/api/client/overview">
+    Learn about Client methods and capabilities
+  </Card>
+</CardGroup>

@@ -1,0 +1,370 @@
+---
+title: 'deployContract'
+description: 'Deploy a WebAssembly smart contract to NEAR'
+---
+
+## Overview
+
+The `deployContract` action creator deploys a compiled WebAssembly (WASM) contract to a NEAR account. The contract must be compiled to WASM format before deployment.
+
+## Signature
+
+```typescript
+deployContract(args: {
+  wasmBytes: Uint8Array
+} | {
+  wasmBase64: string
+}): DeployContractAction
+```
+
+## Parameters
+
+You must provide either `wasmBytes` OR `wasmBase64` (not both):
+
+<ParamField path="wasmBytes" type="Uint8Array">
+  The contract bytecode as a Uint8Array
+</ParamField>
+
+<ParamField path="wasmBase64" type="string">
+  The contract bytecode as a base64-encoded string
+</ParamField>
+
+## Returns
+
+A `DeployContractAction` object:
+
+```typescript
+{
+  actionType: 'DeployContract',
+  wasmBytes: Uint8Array
+}
+```
+
+## Basic Example (Node.js)
+
+```typescript
+import { deployContract } from '@near-api-ts/universal';
+import { readFile } from 'fs/promises';
+
+const wasmBytes = await readFile('./path/to/contract.wasm');
+
+const action = deployContract({ wasmBytes });
+
+await signer.executeTransaction({
+  intent: {
+    receiverAccountId: 'contract.near',
+    action
+  }
+});
+```
+
+## Using Base64
+
+```typescript
+import { deployContract } from '@near-api-ts/universal';
+
+const wasmBase64 = 'AGFzbQEAAAABhYCAgAAA...'; // your base64 string
+
+const action = deployContract({ wasmBase64 });
+
+await signer.executeTransaction({
+  intent: {
+    receiverAccountId: 'contract.near',
+    action
+  }
+});
+```
+
+## Browser Example
+
+```typescript
+import { deployContract } from '@near-api-ts/universal';
+
+// From file input
+const handleFileUpload = async (file: File) => {
+  const wasmBytes = new Uint8Array(await file.arrayBuffer());
+  
+  const action = deployContract({ wasmBytes });
+  
+  await signer.executeTransaction({
+    intent: {
+      receiverAccountId: 'contract.near',
+      action
+    }
+  });
+};
+
+// From fetch
+const deployFromUrl = async (url: string) => {
+  const response = await fetch(url);
+  const wasmBytes = new Uint8Array(await response.arrayBuffer());
+  
+  const action = deployContract({ wasmBytes });
+  
+  await signer.executeTransaction({
+    intent: {
+      receiverAccountId: 'contract.near',
+      action
+    }
+  });
+};
+```
+
+## Deploy and Initialize
+
+Deploy a contract and call its initialization function:
+
+```typescript
+import { 
+  deployContract,
+  functionCall,
+  teraGas,
+  near
+} from '@near-api-ts/universal';
+import { readFile } from 'fs/promises';
+
+const wasmBytes = await readFile('./contract.wasm');
+
+await signer.executeTransaction({
+  intent: {
+    receiverAccountId: 'contract.near',
+    actions: [
+      deployContract({ wasmBytes }),
+      functionCall({
+        functionName: 'init',
+        functionArgs: {
+          owner_id: 'alice.near',
+          metadata: {
+            name: 'My Contract',
+            version: '1.0.0'
+          }
+        },
+        gasLimit: teraGas('50'),
+        attachedDeposit: near('0')
+      })
+    ]
+  }
+});
+```
+
+## Create Account and Deploy
+
+Create a new account and deploy a contract to it:
+
+```typescript
+import { 
+  createAccount,
+  transfer,
+  deployContract,
+  addFullAccessKey,
+  near,
+  randomEd25519KeyPair
+} from '@near-api-ts/universal';
+import { readFile } from 'fs/promises';
+
+const wasmBytes = await readFile('./contract.wasm');
+const newKeyPair = randomEd25519KeyPair();
+
+await signer.executeTransaction({
+  intent: {
+    receiverAccountId: 'new-contract.alice.near',
+    actions: [
+      createAccount(),
+      transfer({ amount: near('5') }),
+      addFullAccessKey({ publicKey: newKeyPair.publicKey }),
+      deployContract({ wasmBytes })
+    ]
+  }
+});
+```
+
+## Update Existing Contract
+
+```typescript
+import { deployContract } from '@near-api-ts/universal';
+import { readFile } from 'fs/promises';
+
+const wasmBytes = await readFile('./updated-contract.wasm');
+
+const action = deployContract({ wasmBytes });
+
+await signer.executeTransaction({
+  intent: {
+    receiverAccountId: 'contract.near',
+    action
+  }
+});
+
+console.log('Contract updated successfully');
+```
+
+<Warning>
+Updating a contract replaces the code but preserves the state. Ensure your new contract is compatible with the existing state structure.
+</Warning>
+
+## Deploy with Migration
+
+```typescript
+import { 
+  deployContract,
+  functionCall,
+  teraGas
+} from '@near-api-ts/universal';
+import { readFile } from 'fs/promises';
+
+const wasmBytes = await readFile('./contract-v2.wasm');
+
+await signer.executeTransaction({
+  intent: {
+    receiverAccountId: 'contract.near',
+    actions: [
+      deployContract({ wasmBytes }),
+      functionCall({
+        functionName: 'migrate',
+        functionArgs: { version: 2 },
+        gasLimit: teraGas('100')
+      })
+    ]
+  }
+});
+```
+
+## Check Contract Size
+
+```typescript
+import { readFile } from 'fs/promises';
+
+const wasmBytes = await readFile('./contract.wasm');
+const sizeInKB = wasmBytes.length / 1024;
+
+console.log(`Contract size: ${sizeInKB.toFixed(2)} KB`);
+
+if (sizeInKB > 4000) {
+  console.warn('Contract is very large. Consider optimization.');
+}
+```
+
+<Info>
+NEAR has no strict size limit for contracts, but larger contracts cost more gas to deploy and may hit transaction gas limits (300 TGas). Most contracts should be under 1-2 MB.
+</Info>
+
+## Error Handling
+
+```typescript
+import { deployContract, isNatError } from '@near-api-ts/universal';
+import { readFile } from 'fs/promises';
+
+try {
+  const wasmBytes = await readFile('./contract.wasm');
+  
+  const action = deployContract({ wasmBytes });
+  
+  await signer.executeTransaction({
+    intent: {
+      receiverAccountId: 'contract.near',
+      action
+    }
+  });
+  
+  console.log('Contract deployed successfully');
+} catch (error) {
+  if (isNatError(error)) {
+    if (error.kind === 'CreateAction.DeployContract.Args.InvalidSchema') {
+      console.error('Invalid WASM format');
+    } else if (error.kind === 'MemorySigner.ExecuteTransaction.Rpc.Transaction.Signer.Balance.TooLow') {
+      console.error('Insufficient balance for deployment');
+    }
+  }
+}
+```
+
+## Safe Variant
+
+```typescript
+import { safeDeployContract } from '@near-api-ts/universal';
+import { readFile } from 'fs/promises';
+
+const wasmBytes = await readFile('./contract.wasm');
+
+const actionResult = safeDeployContract({ wasmBytes });
+
+if (!actionResult.ok) {
+  console.error('Invalid deploy action:', actionResult.error.kind);
+  return;
+}
+
+const result = await signer.safeExecuteTransaction({
+  intent: {
+    receiverAccountId: 'contract.near',
+    action: actionResult.value
+  }
+});
+
+if (result.ok) {
+  console.log('Deployed:', result.value.transactionHash);
+} else {
+  console.error('Deployment failed:', result.error.kind);
+}
+```
+
+## Estimating Deployment Cost
+
+```typescript
+const wasmBytes = await readFile('./contract.wasm');
+const sizeInBytes = wasmBytes.length;
+
+// Rough estimate: ~1 TGas per 10KB of contract size
+const estimatedGas = Math.ceil(sizeInBytes / 10240);
+console.log(`Estimated gas needed: ~${estimatedGas} TGas`);
+
+// Storage cost: ~100 bytes per NEAR token
+const storageCost = sizeInBytes / 100000;
+console.log(`Estimated storage cost: ~${storageCost.toFixed(4)} NEAR`);
+```
+
+## Common Errors
+
+- `CreateAction.DeployContract.Args.InvalidSchema` - Invalid WASM format or missing required parameter
+- `CreateAction.DeployContract.Internal` - Internal error during action creation
+- `MemorySigner.ExecuteTransaction.Rpc.Transaction.Signer.Balance.TooLow` - Insufficient account balance
+- Transaction gas limit exceeded - Contract too large or not optimized
+
+## Best Practices
+
+<Check>
+**DO:**
+- Compile contracts in release mode (`--release`)
+- Optimize WASM with `wasm-opt` before deployment
+- Test deployments on testnet first
+- Keep contracts small and modular
+- Version your contracts
+- Plan state migration for updates
+</Check>
+
+<Warning>
+**DON'T:**
+- Don't deploy debug builds to production
+- Don't update contracts without considering state compatibility
+- Don't forget to initialize after deployment
+- Don't deploy without testing thoroughly
+</Warning>
+
+## Optimization Tips
+
+```bash
+# Compile contract in release mode
+cargo build --target wasm32-unknown-unknown --release
+
+# Optimize with wasm-opt (from binaryen)
+wasm-opt -Oz -o optimized.wasm target/wasm32-unknown-unknown/release/contract.wasm
+
+# Check size
+ls -lh optimized.wasm
+```
+
+## See Also
+
+- [executeTransaction](/api/signers/execute-transaction) - Execute transactions
+- [functionCall](/api/actions/function-call) - Initialize contracts
+- [createAccount](/api/actions/create-account) - Create contract accounts
+- [addFullAccessKey](/api/actions/add-key) - Add keys to contracts

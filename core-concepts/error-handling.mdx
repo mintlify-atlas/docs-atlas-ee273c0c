@@ -1,0 +1,616 @@
+---
+title: "Error Handling"
+description: "Master the NatError system for comprehensive error handling"
+---
+
+## Overview
+
+The NEAR API TypeScript library uses a sophisticated error handling system called `NatError`. It provides strongly-typed, structured errors with full context, enabling precise error handling and debugging.
+
+## The NatError System
+
+### NatError Class
+
+```typescript
+class NatError<K extends NatErrorKind> extends Error {
+  public readonly kind: K;
+  public readonly context: ContextFor<K>;
+  
+  constructor(args: { kind: K; context: ContextFor<K> }) {
+    super(`<${args.kind}>`);
+    this.name = 'NatError';
+    this.kind = args.kind;
+    this.context = args.context;
+  }
+}
+```
+
+Every `NatError` has two key properties:
+
+- **kind**: A string identifier for the error type (e.g., `'Client.GetAccountInfo.Rpc.Account.NotFound'`)
+- **context**: Typed contextual data specific to the error kind
+
+### Error Hierarchy
+
+Errors are organized in a hierarchical namespace:
+
+```
+Component.Method.Layer.ErrorType
+│         │      │     └─ Specific error
+│         │      └─────── Layer (Args, Rpc, Internal)
+│         └────────────── Method name
+└──────────────────────── Component (Client, MemorySigner, etc.)
+```
+
+**Examples:**
+- `Client.GetAccountInfo.Rpc.Account.NotFound`
+- `MemorySigner.ExecuteTransaction.KeyPool.SigningKey.NotFound`
+- `CreateMemoryKeyService.Args.InvalidSchema`
+- `MemoryKeyService.SignTransaction.Internal`
+
+## Error Registries
+
+Each component defines its error registry using TypeScript interfaces:
+
+```typescript
+interface ClientPublicErrorRegistry {
+  'CreateClient.Args.InvalidSchema': InvalidSchemaErrorContext;
+  'CreateClient.Internal': InternalErrorContext;
+  'Client.GetAccountInfo.Args.InvalidSchema': InvalidSchemaErrorContext;
+  'Client.GetAccountInfo.Rpc.Account.NotFound': { accountId: string };
+  'Client.GetAccountInfo.Rpc.Block.NotFound': { blockReference: BlockReference };
+  // ... more errors
+}
+```
+
+The registry provides:
+- **Error kinds**: All possible error strings
+- **Context types**: What data each error includes
+- **Type safety**: Compiler ensures correct error handling
+
+## Safe vs Throwable Variants
+
+Every operation in the library comes in two flavors:
+
+### Throwable Variants
+
+Traditional functions that throw errors:
+
+```typescript
+try {
+  const client = createClient({ transport: config });
+  const info = await client.getAccountInfo({ accountId: 'alice.near' });
+  console.log(info);
+} catch (error) {
+  console.error(error);
+}
+```
+
+### Safe Variants
+
+Return a `Result<T, E>` type for explicit error handling:
+
+```typescript
+const clientResult = safeCreateClient({ transport: config });
+
+if (!clientResult.ok) {
+  console.error('Client creation failed:', clientResult.error.kind);
+  return;
+}
+
+const client = clientResult.value;
+
+const infoResult = await client.safeGetAccountInfo({ 
+  accountId: 'alice.near' 
+});
+
+if (!infoResult.ok) {
+  console.error('Get account info failed:', infoResult.error.kind);
+  return;
+}
+
+const info = infoResult.value;
+```
+
+## Result Type
+
+The `Result` type represents either success or failure:
+
+```typescript
+type ResultOk<V> = { ok: true; value: V };
+type ResultErr<E> = { ok: false; error: E };
+type Result<V, E> = ResultOk<V> | ResultErr<E>;
+```
+
+### Working with Results
+
+```typescript
+const result = await client.safeGetAccountInfo({ accountId: 'alice.near' });
+
+// Type guard
+if (result.ok) {
+  // result.value is available
+  console.log(result.value.amount);
+} else {
+  // result.error is available
+  console.log(result.error.kind);
+  console.log(result.error.context);
+}
+```
+
+## Error Categories
+
+### Schema Validation Errors
+
+These occur when arguments don't match the expected schema:
+
+```typescript
+const result = await client.safeGetAccountInfo({
+  accountId: 'alice.near',
+  // @ts-expect-error - invalid field
+  invalidField: 123
+});
+
+if (!result.ok && 
+    result.error.kind === 'Client.GetAccountInfo.Args.InvalidSchema') {
+  const zodError = result.error.context.zodError;
+  console.log('Validation failed:', zodError.issues);
+}
+```
+
+**Context type:**
+```typescript
+type InvalidSchemaErrorContext = {
+  zodError: $ZodError;  // Detailed validation errors
+};
+```
+
+### RPC Errors
+
+Errors from the NEAR RPC endpoint:
+
+<Tabs>
+  <Tab title="Account Not Found">
+    ```typescript
+    const result = await client.safeGetAccountInfo({
+      accountId: 'nonexistent.near'
+    });
+
+    if (!result.ok && 
+        result.error.kind === 'Client.GetAccountInfo.Rpc.Account.NotFound') {
+      console.log('Account does not exist:', result.error.context.accountId);
+    }
+    ```
+  </Tab>
+
+  <Tab title="Block Not Found">
+    ```typescript
+    const result = await client.safeGetAccountInfo({
+      accountId: 'alice.near',
+      atMomentOf: { blockHash: 'InvalidHash123' }
+    });
+
+    if (!result.ok && 
+        result.error.kind === 'Client.GetAccountInfo.Rpc.Block.NotFound') {
+      console.log('Block not found:', result.error.context.blockReference);
+    }
+    ```
+  </Tab>
+
+  <Tab title="Access Key Not Found">
+    ```typescript
+    const result = await client.safeGetAccountAccessKey({
+      accountId: 'alice.near',
+      publicKey: 'ed25519:InvalidKey...'
+    });
+
+    if (!result.ok && 
+        result.error.kind === 'Client.GetAccountAccessKey.Rpc.AccessKey.NotFound') {
+      console.log('Key not found for account:', result.error.context.accountId);
+    }
+    ```
+  </Tab>
+</Tabs>
+
+### Transaction Errors
+
+Errors during transaction execution:
+
+<Tabs>
+  <Tab title="Receiver Not Found">
+    ```typescript
+    const result = await signer.safeExecuteTransaction({
+      intent: {
+        receiverAccountId: 'nonexistent.near',
+        action: transfer({ amount: near('1') })
+      }
+    });
+
+    if (!result.ok && 
+        result.error.kind === 'MemorySigner.ExecuteTransaction.Rpc.Transaction.Receiver.NotFound') {
+      console.log('Receiver does not exist:', result.error.context.accountId);
+    }
+    ```
+  </Tab>
+
+  <Tab title="Insufficient Balance">
+    ```typescript
+    const result = await signer.safeExecuteTransaction({
+      intent: {
+        receiverAccountId: 'bob.near',
+        action: transfer({ amount: near('1000000') })
+      }
+    });
+
+    if (!result.ok && 
+        result.error.kind === 'MemorySigner.ExecuteTransaction.Rpc.Transaction.Signer.Balance.TooLow') {
+      console.log('Insufficient balance for transaction');
+    }
+    ```
+  </Tab>
+
+  <Tab title="Account Already Exists">
+    ```typescript
+    const result = await signer.safeExecuteTransaction({
+      intent: {
+        receiverAccountId: 'existing.alice.near',
+        action: createAccount()
+      }
+    });
+
+    if (!result.ok && 
+        result.error.kind === 'MemorySigner.ExecuteTransaction.Rpc.Transaction.Action.CreateAccount.AlreadyExist') {
+      console.log('Account already exists');
+    }
+    ```
+  </Tab>
+</Tabs>
+
+### Key Service Errors
+
+Errors from key management operations:
+
+```typescript
+const result = await keyService.safeSignTransaction({
+  transaction: {
+    signerPublicKey: 'ed25519:UnknownKey...',
+    // ... other fields
+  }
+});
+
+if (!result.ok && 
+    result.error.kind === 'MemoryKeyService.SignTransaction.SigningKeyPair.NotFound') {
+  console.log('No private key for:', result.error.context.signerPublicKey);
+  console.log('Available keys:', Object.keys(keyService.keyPairs));
+}
+```
+
+### Signer Errors
+
+Errors from the signing process:
+
+<Tabs>
+  <Tab title="Key Pool Empty">
+    ```typescript
+    const result = await signer.safeExecuteTransaction({
+      intent: myIntent
+    });
+
+    if (!result.ok && 
+        result.error.kind === 'MemorySigner.ExecuteTransaction.KeyPool.Empty') {
+      console.log('No access keys available');
+      console.log('Ensure the account has access keys and KeyService has matching private keys');
+    }
+    ```
+  </Tab>
+
+  <Tab title="Signing Key Not Found">
+    ```typescript
+    const result = await signer.safeExecuteTransaction({
+      intent: myIntent
+    });
+
+    if (!result.ok && 
+        result.error.kind === 'MemorySigner.ExecuteTransaction.KeyPool.SigningKey.NotFound') {
+      console.log('No valid signing key found in key pool');
+    }
+    ```
+  </Tab>
+
+  <Tab title="Task Queue Timeout">
+    ```typescript
+    const result = await signer.safeExecuteTransaction({
+      intent: myIntent
+    });
+
+    if (!result.ok && 
+        result.error.kind === 'MemorySigner.ExecuteTransaction.TaskQueue.Timeout') {
+      console.log('Transaction timed out in queue after', 
+                  result.error.context.timeoutMs, 'ms');
+    }
+    ```
+  </Tab>
+</Tabs>
+
+### Internal Errors
+
+Unexpected errors that indicate bugs or system issues:
+
+```typescript
+if (!result.ok && result.error.kind.endsWith('.Internal')) {
+  console.error('Internal error occurred:', result.error.kind);
+  console.error('Cause:', result.error.context.cause);
+  // Report this as a bug
+}
+```
+
+**Context type:**
+```typescript
+type InternalErrorContext = {
+  cause: unknown;  // Original error that was caught
+};
+```
+
+## Error Checking Utilities
+
+### isNatError
+
+Check if an error is a `NatError`:
+
+```typescript
+import { isNatError } from '@near-api/client';
+
+try {
+  await signer.executeTransaction({ intent });
+} catch (error) {
+  if (isNatError(error)) {
+    console.log('NatError kind:', error.kind);
+    console.log('NatError context:', error.context);
+  } else {
+    console.log('Unknown error:', error);
+  }
+}
+```
+
+### isNatError with Kind
+
+Check for a specific error kind:
+
+```typescript
+try {
+  await client.getAccountInfo({ accountId: 'alice.near' });
+} catch (error) {
+  if (isNatError(error, 'Client.GetAccountInfo.Rpc.Account.NotFound')) {
+    console.log('Account not found:', error.context.accountId);
+  }
+}
+```
+
+### isNatErrorOf
+
+Check if error matches any of multiple kinds:
+
+```typescript
+import { isNatErrorOf } from '@near-api/client';
+
+try {
+  await signer.executeTransaction({ intent });
+} catch (error) {
+  if (isNatErrorOf(error, [
+    'MemorySigner.ExecuteTransaction.Rpc.Transaction.Receiver.NotFound',
+    'MemorySigner.ExecuteTransaction.Rpc.Transaction.Signer.Balance.TooLow',
+    'MemorySigner.ExecuteTransaction.KeyPool.SigningKey.NotFound'
+  ])) {
+    console.log('Transaction failed with expected error:', error.kind);
+    // Handle these specific errors
+  } else {
+    console.log('Unexpected error:', error.kind);
+    // Report or handle differently
+  }
+}
+```
+
+## Error Handling Patterns
+
+### Pattern 1: Exhaustive Error Handling
+
+Handle all known error types explicitly:
+
+```typescript
+const result = await signer.safeExecuteTransaction({ intent });
+
+if (!result.ok) {
+  switch (result.error.kind) {
+    case 'MemorySigner.ExecuteTransaction.Args.InvalidSchema':
+      console.log('Invalid arguments:', result.error.context.zodError);
+      break;
+    
+    case 'MemorySigner.ExecuteTransaction.Rpc.Transaction.Receiver.NotFound':
+      console.log('Receiver not found:', result.error.context.accountId);
+      break;
+    
+    case 'MemorySigner.ExecuteTransaction.Rpc.Transaction.Signer.Balance.TooLow':
+      console.log('Insufficient balance');
+      break;
+    
+    case 'MemorySigner.ExecuteTransaction.KeyPool.SigningKey.NotFound':
+      console.log('No valid signing key');
+      break;
+    
+    default:
+      console.log('Unhandled error:', result.error.kind);
+      console.log('Context:', result.error.context);
+  }
+}
+```
+
+### Pattern 2: Category-Based Handling
+
+Group errors by category:
+
+```typescript
+const result = await client.safeGetAccountInfo({ accountId });
+
+if (!result.ok) {
+  const { kind, context } = result.error;
+  
+  if (kind.includes('.Args.InvalidSchema')) {
+    // Handle validation errors
+    console.log('Invalid arguments');
+  } else if (kind.includes('.Rpc.')) {
+    // Handle RPC errors
+    console.log('RPC error:', kind);
+  } else if (kind.includes('.Internal')) {
+    // Handle internal errors
+    console.error('Internal error:', context.cause);
+  }
+}
+```
+
+### Pattern 3: Early Return Pattern
+
+Return early on errors for cleaner code:
+
+```typescript
+async function processAccount(accountId: string) {
+  const infoResult = await client.safeGetAccountInfo({ accountId });
+  if (!infoResult.ok) {
+    console.error('Failed to get account info:', infoResult.error.kind);
+    return null;
+  }
+  
+  const keysResult = await client.safeGetAccountAccessKeys({ accountId });
+  if (!keysResult.ok) {
+    console.error('Failed to get access keys:', keysResult.error.kind);
+    return null;
+  }
+  
+  // Process data
+  return {
+    info: infoResult.value,
+    keys: keysResult.value
+  };
+}
+```
+
+### Pattern 4: Error Recovery
+
+Attempt recovery based on error type:
+
+```typescript
+const result = await signer.safeExecuteTransaction({ intent });
+
+if (!result.ok) {
+  if (result.error.kind === 'MemorySigner.ExecuteTransaction.Rpc.Transaction.Receiver.NotFound') {
+    // Receiver doesn't exist, create it first
+    console.log('Creating receiver account first...');
+    
+    await signer.executeTransaction({
+      intent: {
+        receiverAccountId: intent.receiverAccountId,
+        actions: [
+          createAccount(),
+          transfer({ amount: near('1') })
+        ]
+      }
+    });
+    
+    // Retry original transaction
+    return await signer.executeTransaction({ intent });
+  }
+  
+  // Can't recover from other errors
+  throw result.error;
+}
+```
+
+## Complete Error Registry
+
+<Accordion title="Full Error Registry (Collapsed for Brevity)">
+The library defines a comprehensive error registry covering all components:
+
+```typescript
+interface NatPublicErrorRegistry {
+  // Client errors
+  'CreateClient.Args.InvalidSchema': InvalidSchemaErrorContext;
+  'CreateClient.Internal': InternalErrorContext;
+  'Client.GetAccountInfo.Args.InvalidSchema': InvalidSchemaErrorContext;
+  'Client.GetAccountInfo.Rpc.Account.NotFound': { accountId: string };
+  'Client.GetAccountInfo.Rpc.Block.NotFound': { blockReference: BlockReference };
+  'Client.GetAccountAccessKey.Rpc.AccessKey.NotFound': { accountId: string; publicKey: PublicKey };
+  // ... more Client errors
+  
+  // MemoryKeyService errors
+  'CreateMemoryKeyService.Args.InvalidSchema': InvalidSchemaErrorContext;
+  'CreateMemoryKeyService.Internal': InternalErrorContext;
+  'MemoryKeyService.SignTransaction.SigningKeyPair.NotFound': { signerPublicKey: PublicKey };
+  'MemoryKeyService.FindKeyPair.NotFound': { publicKey: PublicKey };
+  // ... more KeyService errors
+  
+  // MemorySigner errors
+  'CreateMemorySigner.Args.InvalidSchema': InvalidSchemaErrorContext;
+  'CreateMemorySigner.Internal': InternalErrorContext;
+  'MemorySigner.ExecuteTransaction.KeyPool.Empty': {};
+  'MemorySigner.ExecuteTransaction.KeyPool.SigningKey.NotFound': {};
+  'MemorySigner.ExecuteTransaction.Rpc.Transaction.Receiver.NotFound': { accountId: string };
+  'MemorySigner.ExecuteTransaction.Rpc.Transaction.Signer.Balance.TooLow': {};
+  // ... more Signer errors
+  
+  // Action errors
+  'CreateAction.Transfer.Args.InvalidSchema': InvalidSchemaErrorContext;
+  'CreateAction.FunctionCall.Args.InvalidSchema': InvalidSchemaErrorContext;
+  'CreateAction.FunctionCall.SerializeArgs.Failed': { cause: unknown; functionArgs: unknown };
+  // ... more Action errors
+  
+  // Token and Gas errors
+  'CreateNearToken.Args.InvalidSchema': InvalidSchemaErrorContext;
+  'CreateNearGas.Args.InvalidSchema': InvalidSchemaErrorContext;
+  // ... more utility errors
+  
+  // KeyPair errors
+  'CreateKeyPair.Args.InvalidSchema': InvalidSchemaErrorContext;
+  'CreateKeyPair.Internal': InternalErrorContext;
+}
+```
+</Accordion>
+
+## Best Practices
+
+<Card title="Always Use Safe Variants in Production" icon="shield">
+Use safe variants (`safeExecuteTransaction`, `safeGetAccountInfo`) for explicit error handling. Reserve throwable variants for prototyping and testing.
+</Card>
+
+<Card title="Handle Expected Errors Explicitly" icon="list-check">
+For business-critical operations, handle all expected error types explicitly with switch statements.
+</Card>
+
+<Card title="Log Internal Errors" icon="bug">
+Always log internal errors with full context. These indicate bugs or system issues that need investigation.
+</Card>
+
+<Card title="Provide User-Friendly Messages" icon="message">
+Convert error kinds into user-friendly messages:
+```typescript
+function getUserMessage(error: NatError<any>): string {
+  switch (error.kind) {
+    case 'Client.GetAccountInfo.Rpc.Account.NotFound':
+      return `Account "${error.context.accountId}" does not exist`;
+    case 'MemorySigner.ExecuteTransaction.Rpc.Transaction.Signer.Balance.TooLow':
+      return 'Insufficient balance to complete transaction';
+    default:
+      return 'An unexpected error occurred';
+  }
+}
+```
+</Card>
+
+<Card title="Don't Swallow Errors" icon="eye">
+Never catch errors without handling or logging them. Use safe variants to make error handling explicit.
+</Card>
+
+## Related Concepts
+
+- [Clients](/core-concepts/clients) - Client error types
+- [Key Services](/core-concepts/key-services) - KeyService error types
+- [Signers](/core-concepts/signers) - Signer error types
+- [Transactions](/core-concepts/transactions) - Transaction error types

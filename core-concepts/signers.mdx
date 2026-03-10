@@ -1,0 +1,558 @@
+---
+title: "Signers"
+description: "Learn about Signers for high-level transaction signing and execution"
+---
+
+## Overview
+
+A `Signer` is a high-level abstraction that combines a Client, KeyService, and account context to provide a seamless transaction execution experience. It handles the complexity of transaction construction, signing, and submission to the network.
+
+## MemorySigner
+
+The `MemorySigner` is the default implementation that manages transaction signing with automatic nonce management, access key selection, and concurrent transaction handling.
+
+### Type Definition
+
+```typescript
+type MemorySigner = {
+  signerAccountId: AccountId;
+  client: Client;
+  keyService: MemoryKeyService;
+  
+  // Throwable variants
+  signTransaction: SignTransactionIntent;
+  executeTransaction: ExecuteTransaction;
+  
+  // Safe variants
+  safeSignTransaction: SafeSignTransactionIntent;
+  safeExecuteTransaction: SafeExecuteTransaction;
+};
+```
+
+### Internal Architecture
+
+The MemorySigner uses several internal components:
+
+```typescript
+type MemorySignerContext = {
+  signerAccountId: AccountId;
+  client: Client;
+  keyService: MemoryKeyService;
+  taskQueue: TaskQueue;    // Manages concurrent transactions
+  keyPool: KeyPool;        // Manages access keys
+  tasker: Tasker;          // Coordinates tasks
+};
+```
+
+<Note>
+The internal components handle complex scenarios like:
+- Automatic nonce increment for sequential transactions
+- Access key selection from multiple available keys
+- Concurrent transaction queuing to prevent nonce conflicts
+</Note>
+
+## Creating a MemorySigner
+
+### Basic Creation
+
+```typescript
+import { 
+  createClient, 
+  createMemoryKeyService, 
+  createMemorySigner 
+} from '@near-api/client';
+
+const client = createClient({
+  transport: {
+    rpcEndpoints: {
+      archival: [{ url: 'https://rpc.testnet.near.org' }]
+    }
+  }
+});
+
+const keyService = createMemoryKeyService({
+  keySources: [
+    { privateKey: 'ed25519:...' }
+  ]
+});
+
+const signer = createMemorySigner({
+  signerAccountId: 'alice.near',
+  client,
+  keyService
+});
+```
+
+### With Configuration
+
+```typescript
+const signer = createMemorySigner({
+  signerAccountId: 'alice.near',
+  client,
+  keyService,
+  keyPool: {
+    // Only use specific access keys
+    allowedAccessKeys: [
+      'ed25519:PublicKey1...',
+      'ed25519:PublicKey2...'
+    ]
+  },
+  taskQueue: {
+    // Timeout for queued transactions
+    timeoutMs: 30000  // 30 seconds
+  }
+});
+```
+
+### Safe Creation
+
+```typescript
+import { safeCreateMemorySigner } from '@near-api/client';
+
+const result = safeCreateMemorySigner({
+  signerAccountId: 'alice.near',
+  client,
+  keyService
+});
+
+if (result.ok) {
+  const signer = result.value;
+} else {
+  // 'CreateMemorySigner.Args.InvalidSchema'
+  // 'CreateMemorySigner.Internal'
+}
+```
+
+## Signer Methods
+
+### executeTransaction
+
+The primary method for executing transactions. It handles the full lifecycle:
+
+1. Fetches account access keys
+2. Selects an appropriate key from the key pool
+3. Gets the current nonce and recent block hash
+4. Constructs the transaction
+5. Signs it using the KeyService
+6. Submits it to the network via Client
+7. Returns the transaction result
+
+```typescript
+import { transfer, near } from '@near-api/client';
+
+const result = await signer.executeTransaction({
+  intent: {
+    receiverAccountId: 'bob.near',
+    action: transfer({ amount: near('1') })
+  }
+});
+
+console.log(result.transaction_outcome.outcome.status);
+```
+
+### Multiple Actions
+
+```typescript
+import { transfer, functionCall, near, teraGas } from '@near-api/client';
+
+const result = await signer.executeTransaction({
+  intent: {
+    receiverAccountId: 'contract.near',
+    actions: [
+      transfer({ amount: near('0.1') }),
+      functionCall({
+        functionName: 'my_method',
+        functionArgs: { key: 'value' },
+        gasLimit: teraGas('30'),
+        attachedDeposit: near('0')
+      })
+    ]
+  }
+});
+```
+
+<Tabs>
+  <Tab title="Throwable">
+    ```typescript
+    try {
+      const result = await signer.executeTransaction({
+        intent: {
+          receiverAccountId: 'bob.near',
+          action: myAction
+        }
+      });
+      console.log('Success!', result);
+    } catch (error) {
+      console.error('Transaction failed:', error);
+    }
+    ```
+  </Tab>
+
+  <Tab title="Safe">
+    ```typescript
+    const result = await signer.safeExecuteTransaction({
+      intent: {
+        receiverAccountId: 'bob.near',
+        action: myAction
+      }
+    });
+
+    if (!result.ok) {
+      switch (result.error.kind) {
+        case 'MemorySigner.ExecuteTransaction.Rpc.Transaction.Receiver.NotFound':
+          console.log('Receiver account does not exist');
+          break;
+        case 'MemorySigner.ExecuteTransaction.Rpc.Transaction.Signer.Balance.TooLow':
+          console.log('Insufficient balance');
+          break;
+        case 'MemorySigner.ExecuteTransaction.KeyPool.SigningKey.NotFound':
+          console.log('No valid signing key found');
+          break;
+      }
+    }
+    ```
+  </Tab>
+</Tabs>
+
+### signTransaction
+
+Sign a transaction without submitting it to the network:
+
+```typescript
+const signedTx = await signer.signTransaction({
+  intent: {
+    receiverAccountId: 'bob.near',
+    action: transfer({ amount: near('1') })
+  }
+});
+
+console.log(signedTx.transaction);
+console.log(signedTx.signature);
+console.log(signedTx.transactionHash);
+```
+
+This is useful when:
+- You want to inspect the signed transaction before sending
+- You're implementing a transaction approval flow
+- You need to submit the transaction through a different channel
+
+## Key Pool Management
+
+The `KeyPool` automatically manages access keys for the signer account:
+
+### Allowed Access Keys
+
+Restrict which access keys the signer can use:
+
+```typescript
+const signer = createMemorySigner({
+  signerAccountId: 'alice.near',
+  client,
+  keyService,
+  keyPool: {
+    allowedAccessKeys: [
+      'ed25519:SpecificKey1...',
+      'ed25519:SpecificKey2...'
+    ]
+  }
+});
+```
+
+Without this configuration, the signer will attempt to use any access key that:
+1. Exists on the account (fetched via RPC)
+2. Has a corresponding private key in the KeyService
+
+### Access Key Selection
+
+The KeyPool selects keys based on:
+- **Full Access Keys**: Preferred for general transactions
+- **Function Call Keys**: Used only if they match the transaction's receiver and functions
+- **Nonce availability**: Keys with available nonces are prioritized
+
+## Task Queue
+
+The `TaskQueue` ensures transaction ordering and prevents nonce conflicts:
+
+### Sequential Execution
+
+When you call `executeTransaction` multiple times rapidly:
+
+```typescript
+// All three will execute sequentially with proper nonces
+const tx1 = signer.executeTransaction({ intent: intent1 });
+const tx2 = signer.executeTransaction({ intent: intent2 });
+const tx3 = signer.executeTransaction({ intent: intent3 });
+
+await Promise.all([tx1, tx2, tx3]);
+```
+
+The TaskQueue ensures:
+- Nonces are properly incremented
+- Transactions don't conflict
+- Parallel execution when possible (using different keys)
+
+### Timeout Configuration
+
+```typescript
+const signer = createMemorySigner({
+  signerAccountId: 'alice.near',
+  client,
+  keyService,
+  taskQueue: {
+    timeoutMs: 60000  // Wait up to 60 seconds in queue
+  }
+});
+```
+
+## Signer Factory Pattern
+
+For applications that need multiple signers, use the factory pattern:
+
+```typescript
+import { createMemorySignerFactory } from '@near-api/client';
+
+// Create factory once
+const signerFactory = createMemorySignerFactory({
+  client,
+  keyService
+});
+
+// Create signers for different accounts
+const aliceSigner = signerFactory('alice.near');
+const bobSigner = signerFactory('bob.near');
+const contractSigner = signerFactory('contract.near');
+
+// All signers share the same client and keyService
+```
+
+**Safe factory:**
+
+```typescript
+import { createSafeMemorySignerFactory } from '@near-api/client';
+
+const safeSignerFactory = createSafeMemorySignerFactory({
+  client,
+  keyService
+});
+
+const result = safeSignerFactory('alice.near');
+if (result.ok) {
+  const signer = result.value;
+}
+```
+
+## Error Handling
+
+The MemorySigner has comprehensive error types for all failure scenarios:
+
+<Accordion title="Error Registry">
+```typescript
+interface MemorySignerPublicErrorRegistry {
+  // Creation errors
+  'CreateMemorySigner.Args.InvalidSchema': InvalidSchemaErrorContext;
+  'CreateMemorySigner.Internal': InternalErrorContext;
+  
+  // Execution errors - Key Pool
+  'MemorySigner.ExecuteTransaction.KeyPool.AccessKeys.NotLoaded': {};
+  'MemorySigner.ExecuteTransaction.KeyPool.Empty': {};
+  'MemorySigner.ExecuteTransaction.KeyPool.SigningKey.NotFound': {};
+  
+  // Execution errors - Task Queue
+  'MemorySigner.ExecuteTransaction.TaskQueue.Timeout': { timeoutMs: number };
+  
+  // Execution errors - Network
+  'MemorySigner.ExecuteTransaction.PreferredRpc.NotFound': {};
+  'MemorySigner.ExecuteTransaction.Timeout': { timeoutMs: number };
+  'MemorySigner.ExecuteTransaction.Aborted': { reason: string };
+  'MemorySigner.ExecuteTransaction.Exhausted': {};
+  
+  // Execution errors - Transaction
+  'MemorySigner.ExecuteTransaction.Rpc.Transaction.Signer.Balance.TooLow': {};
+  'MemorySigner.ExecuteTransaction.Rpc.Transaction.Receiver.NotFound': { accountId: string };
+  'MemorySigner.ExecuteTransaction.Rpc.Transaction.Timeout': {};
+  
+  // Execution errors - Actions
+  'MemorySigner.ExecuteTransaction.Rpc.Transaction.Action.CreateAccount.AlreadyExist': {};
+  'MemorySigner.ExecuteTransaction.Rpc.Transaction.Action.Stake.BelowThreshold': {};
+  'MemorySigner.ExecuteTransaction.Rpc.Transaction.Action.Stake.Balance.TooLow': {};
+  'MemorySigner.ExecuteTransaction.Rpc.Transaction.Action.Stake.NotFound': {};
+  
+  // Sign errors
+  'MemorySigner.SignTransaction.Args.InvalidSchema': InvalidSchemaErrorContext;
+  // ... and more
+}
+```
+</Accordion>
+
+### Common Error Scenarios
+
+<Tabs>
+  <Tab title="No Valid Keys">
+    ```typescript
+    const result = await signer.safeExecuteTransaction({
+      intent: myIntent
+    });
+
+    if (!result.ok && 
+        result.error.kind === 'MemorySigner.ExecuteTransaction.KeyPool.SigningKey.NotFound') {
+      console.log('The signer has no valid access keys');
+      console.log('Possible reasons:');
+      console.log('1. KeyService does not have the private key');
+      console.log('2. Account does not have matching access keys');
+      console.log('3. allowedAccessKeys filter is too restrictive');
+    }
+    ```
+  </Tab>
+
+  <Tab title="Receiver Not Found">
+    ```typescript
+    const result = await signer.safeExecuteTransaction({
+      intent: {
+        receiverAccountId: 'nonexistent.near',
+        action: transfer({ amount: near('1') })
+      }
+    });
+
+    if (!result.ok && 
+        result.error.kind === 'MemorySigner.ExecuteTransaction.Rpc.Transaction.Receiver.NotFound') {
+      console.log('Receiver account does not exist:', 
+                  result.error.context.accountId);
+    }
+    ```
+  </Tab>
+
+  <Tab title="Insufficient Balance">
+    ```typescript
+    const result = await signer.safeExecuteTransaction({
+      intent: {
+        receiverAccountId: 'bob.near',
+        action: transfer({ amount: near('1000000') })
+      }
+    });
+
+    if (!result.ok && 
+        result.error.kind === 'MemorySigner.ExecuteTransaction.Rpc.Transaction.Signer.Balance.TooLow') {
+      console.log('Signer account has insufficient balance');
+    }
+    ```
+  </Tab>
+
+  <Tab title="Queue Timeout">
+    ```typescript
+    const result = await signer.safeExecuteTransaction({
+      intent: myIntent
+    });
+
+    if (!result.ok && 
+        result.error.kind === 'MemorySigner.ExecuteTransaction.TaskQueue.Timeout') {
+      console.log('Transaction timed out in queue after', 
+                  result.error.context.timeoutMs, 'ms');
+      console.log('Too many concurrent transactions or slow network');
+    }
+    ```
+  </Tab>
+</Tabs>
+
+## Complete Example
+
+Here's a complete example using all the concepts:
+
+```typescript
+import { 
+  createTestnetClient,
+  createMemoryKeyService,
+  createMemorySigner,
+  randomEd25519KeyPair,
+  transfer,
+  functionCall,
+  near,
+  teraGas
+} from '@near-api/client';
+
+// 1. Setup
+const client = createTestnetClient();
+
+const keyPair = randomEd25519KeyPair();
+const keyService = createMemoryKeyService({
+  keySource: { privateKey: keyPair.privateKey }
+});
+
+const signer = createMemorySigner({
+  signerAccountId: 'alice.testnet',
+  client,
+  keyService
+});
+
+// 2. Simple transfer
+const result1 = await signer.safeExecuteTransaction({
+  intent: {
+    receiverAccountId: 'bob.testnet',
+    action: transfer({ amount: near('1') })
+  }
+});
+
+if (result1.ok) {
+  console.log('Transfer successful!');
+}
+
+// 3. Contract call with deposit
+const result2 = await signer.safeExecuteTransaction({
+  intent: {
+    receiverAccountId: 'contract.testnet',
+    action: functionCall({
+      functionName: 'my_method',
+      functionArgs: { key: 'value' },
+      gasLimit: teraGas('50'),
+      attachedDeposit: near('0.1')
+    })
+  }
+});
+
+// 4. Multiple actions in one transaction
+const result3 = await signer.safeExecuteTransaction({
+  intent: {
+    receiverAccountId: 'contract.testnet',
+    actions: [
+      transfer({ amount: near('0.1') }),
+      functionCall({
+        functionName: 'deposit',
+        gasLimit: teraGas('30')
+      })
+    ]
+  }
+});
+
+// 5. Handle all errors
+if (!result3.ok) {
+  console.error('Transaction failed:', result3.error.kind);
+  console.error('Context:', result3.error.context);
+}
+```
+
+## Best Practices
+
+<Card title="Reuse Signer Instances" icon="recycle">
+Create signer instances once and reuse them. The internal TaskQueue and KeyPool maintain state for optimal performance.
+</Card>
+
+<Card title="Use Safe Variants in Production" icon="shield">
+Always use safe variants (`safeExecuteTransaction`, `safeSignTransaction`) in production to handle errors explicitly.
+</Card>
+
+<Card title="Configure Task Queue Timeout" icon="clock">
+Set appropriate timeout values based on your use case:
+- High-frequency transactions: 10-30 seconds
+- User-initiated transactions: 60-120 seconds
+- Batch operations: Consider sequential processing
+</Card>
+
+<Card title="Monitor Key Pool" icon="key">
+Ensure your KeyService has private keys for all access keys on the signer account, or use `allowedAccessKeys` to restrict usage.
+</Card>
+
+## Related Concepts
+
+- [Clients](/core-concepts/clients) - RPC client for network interaction
+- [Key Services](/core-concepts/key-services) - Key management and signing
+- [Transactions](/core-concepts/transactions) - Transaction structure and actions
+- [Error Handling](/core-concepts/error-handling) - NatError system details

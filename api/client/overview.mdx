@@ -1,0 +1,172 @@
+---
+title: Client Overview
+description: The NEAR API TypeScript Client provides a robust interface for interacting with the NEAR blockchain
+---
+
+The Client is the main entry point for interacting with the NEAR blockchain. It provides methods for querying account information, calling contract functions, fetching blocks, and sending transactions.
+
+## Creating a Client
+
+You can create a client in three ways:
+
+1. **Custom configuration** - Configure your own RPC endpoints and transport policies
+2. **Testnet preset** - Pre-configured for NEAR testnet
+3. **Mainnet preset** - Pre-configured for NEAR mainnet
+
+```typescript
+import { createClient, createTestnetClient, createMainnetClient } from 'near-api-ts';
+
+// Custom configuration
+const client = createClient({
+  transport: {
+    rpcEndpoints: {
+      regular: [{ url: 'https://rpc.testnet.near.org' }],
+      archival: [{ url: 'https://archival-rpc.testnet.near.org' }]
+    }
+  }
+});
+
+// Testnet preset
+const testnetClient = createTestnetClient();
+
+// Mainnet preset
+const mainnetClient = createMainnetClient();
+```
+
+## Client Interface
+
+The Client provides both **throwable** and **safe** variants of each method:
+
+- **Throwable methods** - Throw errors on failure (e.g., `getAccountInfo`)
+- **Safe methods** - Return `Result<T, E>` objects (e.g., `safeGetAccountInfo`)
+
+### Available Methods
+
+<CardGroup cols={2}>
+  <Card title="Account Methods" icon="user" href="/api/account/get-account-info">
+    Query account information and access keys
+  </Card>
+  <Card title="Contract Methods" icon="file-contract" href="/api/contract/call-read-function">
+    Call read-only contract functions
+  </Card>
+  <Card title="Block Methods" icon="cube" href="/api/block/get-block">
+    Fetch block data and recent block hashes
+  </Card>
+  <Card title="Transaction Methods" icon="paper-plane" href="/api/transaction/send-signed-transaction">
+    Send signed transactions to the network
+  </Card>
+</CardGroup>
+
+## Method Categories
+
+### Account Methods
+
+- `getAccountInfo` / `safeGetAccountInfo` - Get account balance and state
+- `getAccountAccessKey` / `safeGetAccountAccessKey` - Get a specific access key
+- `getAccountAccessKeys` / `safeGetAccountAccessKeys` - Get all access keys for an account
+
+### Contract Methods
+
+- `callContractReadFunction` / `safeCallContractReadFunction` - Call view functions on smart contracts
+
+### Block Methods
+
+- `getBlock` / `safeGetBlock` - Get block information
+- `getRecentBlockHash` / `safeGetRecentBlockHash` - Get a recent block hash for transactions
+
+### Transaction Methods
+
+- `sendSignedTransaction` / `safeSendSignedTransaction` - Broadcast signed transactions to the network
+
+## Error Handling
+
+### Using Throwable Methods
+
+```typescript
+try {
+  const accountInfo = await client.getAccountInfo({
+    accountId: 'example.near'
+  });
+  console.log(accountInfo);
+} catch (error) {
+  console.error('Failed to get account info:', error);
+}
+```
+
+### Using Safe Methods
+
+```typescript
+const result = await client.safeGetAccountInfo({
+  accountId: 'example.near'
+});
+
+if (result.ok) {
+  console.log(result.value);
+} else {
+  console.error('Error kind:', result.error.kind);
+  console.error('Error context:', result.error.context);
+}
+```
+
+## Common Parameters
+
+Most client methods accept these optional parameters:
+
+<ParamField path="policies" type="object" optional>
+  Policy overrides for this specific request
+  
+  <Expandable title="properties">
+    <ParamField path="transport" type="PartialTransportPolicy" optional>
+      Transport policy overrides (timeouts, retry behavior, etc.)
+    </ParamField>
+  </Expandable>
+</ParamField>
+
+<ParamField path="options" type="object" optional>
+  Additional options for the request
+  
+  <Expandable title="properties">
+    <ParamField path="signal" type="AbortSignal" optional>
+      AbortSignal for canceling the request
+    </ParamField>
+  </Expandable>
+</ParamField>
+
+## Example: Complete Flow
+
+```typescript
+import { createTestnetClient } from 'near-api-ts';
+
+const client = createTestnetClient();
+
+// Get account information
+const accountInfo = await client.getAccountInfo({
+  accountId: 'example.testnet'
+});
+
+console.log('Available balance:', accountInfo.accountInfo.balance.available);
+
+// Call a contract read function
+const result = await client.callContractReadFunction({
+  contractAccountId: 'contract.testnet',
+  functionName: 'get_greeting',
+  functionArgs: { account_id: 'example.testnet' }
+});
+
+console.log('Contract result:', result.result);
+
+// Get recent block
+const block = await client.getBlock();
+console.log('Latest block height:', block.rawRpcResult.header.height);
+```
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Create a Client" icon="plus" href="/api/client/create-client">
+    Learn about client configuration options
+  </Card>
+  <Card title="Network Presets" icon="network-wired" href="/api/client/presets">
+    Use pre-configured clients for testnet and mainnet
+  </Card>
+</CardGroup>

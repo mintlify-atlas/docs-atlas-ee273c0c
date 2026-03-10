@@ -1,0 +1,676 @@
+---
+title: Working with Contracts
+description: Deploy, call, and manage smart contracts on the NEAR blockchain
+---
+
+This guide covers deploying smart contracts, calling contract methods, and managing contract state on NEAR.
+
+## Prerequisites
+
+```bash
+npm install near-api-ts
+```
+
+You'll also need:
+- A compiled WASM contract file
+- A NEAR account with sufficient balance
+- The account's private key
+
+## Deploying Contracts
+
+### Deploy to New Account
+
+The most common pattern is to deploy a contract to a new subaccount:
+
+<Steps>
+  <Step title="Setup signer">
+    ```typescript
+    import { createTestnetClient, createMemoryKeyService, createMemorySigner } from 'near-api-ts';
+
+    const client = createTestnetClient();
+    const keyService = createMemoryKeyService({
+      keySource: { privateKey: 'ed25519:your-private-key' }
+    });
+    const signer = createMemorySigner({
+      signerAccountId: 'parent.testnet',
+      client,
+      keyService
+    });
+    ```
+  </Step>
+
+  <Step title="Read WASM file">
+    ```typescript
+    import { readFile } from 'fs/promises';
+
+    // Node.js
+    const wasmBytes = await readFile('./contract.wasm');
+
+    // Browser
+    const response = await fetch('/contract.wasm');
+    const wasmBytes = new Uint8Array(await response.arrayBuffer());
+    ```
+  </Step>
+
+  <Step title="Deploy with multiple actions">
+    ```typescript
+    import { createAccount, transfer, deployContract, near, randomEd25519KeyPair } from 'near-api-ts';
+
+    // Generate key for the new contract account
+    const contractKey = randomEd25519KeyPair();
+
+    await signer.executeTransaction({
+      intent: {
+        actions: [
+          createAccount(),
+          transfer({ amount: near('10') }),  // Fund the contract
+          addFullAccessKey({ publicKey: contractKey.publicKey }),
+          deployContract({ wasmBytes })
+        ],
+        receiverAccountId: 'mycontract.parent.testnet'
+      }
+    });
+
+    console.log('Contract deployed to: mycontract.parent.testnet');
+    console.log('Contract private key:', contractKey.privateKey);
+    ```
+  </Step>
+</Steps>
+
+### Deploy to Existing Account
+
+You can also deploy or redeploy to an existing account:
+
+```typescript
+import { deployContract } from 'near-api-ts';
+import { readFile } from 'fs/promises';
+
+const wasmBytes = await readFile('./updated-contract.wasm');
+
+await signer.executeTransaction({
+  intent: {
+    action: deployContract({ wasmBytes }),
+    receiverAccountId: 'existing-contract.testnet'
+  }
+});
+
+console.log('Contract updated');
+```
+
+### Deploy with Initialization
+
+Most contracts need initialization after deployment:
+
+```typescript
+import { deployContract, functionCall, teraGas, near } from 'near-api-ts';
+
+await signer.executeTransaction({
+  intent: {
+    actions: [
+      createAccount(),
+      transfer({ amount: near('10') }),
+      deployContract({ wasmBytes }),
+      // Initialize the contract
+      functionCall({
+        functionName: 'new',
+        functionArgs: {
+          owner_id: 'parent.testnet',
+          total_supply: '1000000'
+        },
+        gasLimit: teraGas('30')
+      })
+    ],
+    receiverAccountId: 'token.parent.testnet'
+  }
+});
+```
+
+## Calling Contract Methods
+
+### View Methods (Read-Only)
+
+View methods don't modify state and don't require gas or signing:
+
+```typescript
+import { createTestnetClient } from 'near-api-ts';
+
+const client = createTestnetClient();
+
+// Call a view method
+const result = await client.callContractReadFunction({
+  contractAccountId: 'contract.testnet',
+  functionName: 'get_balance',
+  functionArgs: {
+    account_id: 'user.testnet'
+  },
+  withStateAt: 'LatestFinalBlock'
+});
+
+console.log('Balance:', result.result);
+```
+
+### Change Methods (State Modifying)
+
+Change methods modify contract state and require a signed transaction:
+
+```typescript
+import { functionCall, teraGas } from 'near-api-ts';
+
+const result = await signer.executeTransaction({
+  intent: {
+    action: functionCall({
+      functionName: 'increment_counter',
+      functionArgs: {},
+      gasLimit: teraGas('30')
+    }),
+    receiverAccountId: 'counter.testnet'
+  }
+});
+
+console.log('Transaction ID:', result.transactionOutcome.id);
+```
+
+### Methods with Deposits
+
+Many methods require NEAR tokens to be attached:
+
+```typescript
+import { functionCall, teraGas, near } from 'near-api-ts';
+
+// Storage deposit for FT contract
+await signer.executeTransaction({
+  intent: {
+    action: functionCall({
+      functionName: 'storage_deposit',
+      functionArgs: {
+        account_id: 'user.testnet'
+      },
+      gasLimit: teraGas('30'),
+      attachedDeposit: near('0.00125')  // Storage cost
+    }),
+    receiverAccountId: 'token.testnet'
+  }
+});
+```
+
+## Working with NFT Contracts
+
+### Mint an NFT
+
+```typescript
+import { functionCall, teraGas, near } from 'near-api-ts';
+
+await signer.executeTransaction({
+  intent: {
+    action: functionCall({
+      functionName: 'nft_mint',
+      functionArgs: {
+        token_id: 'token-001',
+        receiver_id: 'owner.testnet',
+        token_metadata: {
+          title: 'My NFT',
+          description: 'A unique digital asset',
+          media: 'https://example.com/nft.png',
+          media_hash: null,
+          copies: 1,
+          issued_at: Date.now().toString(),
+          expires_at: null,
+          starts_at: null,
+          updated_at: null,
+          extra: null,
+          reference: null,
+          reference_hash: null
+        }
+      },
+      gasLimit: teraGas('50'),
+      attachedDeposit: near('0.01')  // Covers storage
+    }),
+    receiverAccountId: 'nft.testnet'
+  }
+});
+```
+
+### Query NFT Data
+
+```typescript
+const client = createTestnetClient();
+
+// Get NFT metadata
+const nftData = await client.callContractReadFunction({
+  contractAccountId: 'nft.testnet',
+  functionName: 'nft_token',
+  functionArgs: {
+    token_id: 'token-001'
+  }
+});
+
+console.log('Owner:', nftData.result.owner_id);
+console.log('Metadata:', nftData.result.metadata);
+
+// Get tokens for owner
+const tokens = await client.callContractReadFunction({
+  contractAccountId: 'nft.testnet',
+  functionName: 'nft_tokens_for_owner',
+  functionArgs: {
+    account_id: 'owner.testnet',
+    from_index: '0',
+    limit: 50
+  }
+});
+
+console.log('NFTs owned:', tokens.result.length);
+```
+
+### Transfer NFT
+
+```typescript
+import { functionCall, teraGas, yoctoNear } from 'near-api-ts';
+
+await signer.executeTransaction({
+  intent: {
+    action: functionCall({
+      functionName: 'nft_transfer',
+      functionArgs: {
+        receiver_id: 'buyer.testnet',
+        token_id: 'token-001',
+        memo: 'Selling my NFT'
+      },
+      gasLimit: teraGas('30'),
+      attachedDeposit: yoctoNear('1')  // Required by standard
+    }),
+    receiverAccountId: 'nft.testnet'
+  }
+});
+```
+
+## Working with Fungible Token Contracts
+
+### Check Balance
+
+```typescript
+const balance = await client.callContractReadFunction({
+  contractAccountId: 'token.testnet',
+  functionName: 'ft_balance_of',
+  functionArgs: {
+    account_id: 'user.testnet'
+  }
+});
+
+console.log('Token balance:', balance.result);
+```
+
+### Transfer Tokens
+
+```typescript
+import { functionCall, teraGas, yoctoNear } from 'near-api-ts';
+
+await signer.executeTransaction({
+  intent: {
+    action: functionCall({
+      functionName: 'ft_transfer',
+      functionArgs: {
+        receiver_id: 'recipient.testnet',
+        amount: '1000000',  // Amount in smallest unit
+        memo: 'Payment for services'
+      },
+      gasLimit: teraGas('30'),
+      attachedDeposit: yoctoNear('1')  // Required by standard
+    }),
+    receiverAccountId: 'token.testnet'
+  }
+});
+```
+
+### Register Account
+
+Before receiving tokens, accounts must be registered:
+
+```typescript
+import { functionCall, teraGas, near } from 'near-api-ts';
+
+// Register for storage
+await signer.executeTransaction({
+  intent: {
+    action: functionCall({
+      functionName: 'storage_deposit',
+      functionArgs: {
+        account_id: 'newuser.testnet',
+        registration_only: true
+      },
+      gasLimit: teraGas('30'),
+      attachedDeposit: near('0.00125')
+    }),
+    receiverAccountId: 'token.testnet'
+  }
+});
+```
+
+## Cross-Contract Calls
+
+### Call and Callback Pattern
+
+```typescript
+import { functionCall, teraGas, near } from 'near-api-ts';
+
+// Main contract calls another contract and processes result
+await signer.executeTransaction({
+  intent: {
+    action: functionCall({
+      functionName: 'process_with_oracle',
+      functionArgs: {
+        oracle_contract: 'oracle.testnet',
+        query: 'NEAR/USD'
+      },
+      gasLimit: teraGas('150'),  // Need more gas for cross-contract calls
+      attachedDeposit: near('0.1')
+    }),
+    receiverAccountId: 'mycontract.testnet'
+  }
+});
+```
+
+### Batched Operations
+
+```typescript
+import { functionCall, teraGas } from 'near-api-ts';
+
+// Multiple contract calls in one transaction
+await signer.executeTransaction({
+  intent: {
+    actions: [
+      functionCall({
+        functionName: 'approve',
+        functionArgs: { spender: 'dex.testnet', amount: '1000' },
+        gasLimit: teraGas('30')
+      }),
+      functionCall({
+        functionName: 'swap',
+        functionArgs: { token_in: 'token-a', token_out: 'token-b', amount: '1000' },
+        gasLimit: teraGas('100')
+      })
+    ],
+    receiverAccountId: 'dex.testnet'
+  }
+});
+```
+
+## Advanced Contract Patterns
+
+### Custom Serialization for Borsh
+
+Some contracts use Borsh instead of JSON:
+
+```typescript
+import { functionCall, teraGas, toJsonBytes } from 'near-api-ts';
+import * as borsh from 'borsh';
+
+// Define Borsh schema
+class MyArgs {
+  constructor(public id: number, public data: string) {}
+}
+
+const schema = new Map([
+  [MyArgs, { kind: 'struct', fields: [['id', 'u32'], ['data', 'string']] }]
+]);
+
+await signer.executeTransaction({
+  intent: {
+    action: functionCall({
+      functionName: 'process_data',
+      functionArgs: { id: 42, data: 'test' },
+      gasLimit: teraGas('30'),
+      options: {
+        serializeArgs: ({ functionArgs }) => {
+          const args = new MyArgs(functionArgs.id, functionArgs.data);
+          return borsh.serialize(schema, args);
+        }
+      }
+    }),
+    receiverAccountId: 'borsh-contract.testnet'
+  }
+});
+```
+
+### Handling Contract Events
+
+```typescript
+const result = await signer.executeTransaction({
+  intent: {
+    action: functionCall({
+      functionName: 'create_item',
+      functionArgs: { name: 'Widget' },
+      gasLimit: teraGas('30')
+    }),
+    receiverAccountId: 'contract.testnet'
+  }
+});
+
+// Parse logs for events
+const logs = result.transactionOutcome.outcome.logs;
+for (const log of logs) {
+  if (log.startsWith('EVENT_JSON:')) {
+    const eventData = JSON.parse(log.substring(11));
+    console.log('Event:', eventData);
+  }
+}
+```
+
+### Query Contract State at Specific Block
+
+```typescript
+// Get contract state as it was at block 12345
+const historicalData = await client.callContractReadFunction({
+  contractAccountId: 'contract.testnet',
+  functionName: 'get_data',
+  functionArgs: {},
+  withStateAt: { blockHeight: 12345 }
+});
+
+console.log('Historical state:', historicalData.result);
+```
+
+## Complete Example: Token Transfer
+
+Here's a complete example of a fungible token transfer with error handling:
+
+```typescript
+import {
+  createTestnetClient,
+  createMemoryKeyService,
+  createMemorySigner,
+  functionCall,
+  teraGas,
+  yoctoNear,
+  isNatError
+} from 'near-api-ts';
+
+interface TransferResult {
+  success: boolean;
+  transactionId?: string;
+  error?: string;
+}
+
+async function transferTokens(
+  senderAccount: string,
+  privateKey: string,
+  tokenContract: string,
+  receiverId: string,
+  amount: string
+): Promise<TransferResult> {
+  try {
+    // Setup
+    const client = createTestnetClient();
+    const keyService = createMemoryKeyService({
+      keySource: { privateKey }
+    });
+    const signer = createMemorySigner({
+      signerAccountId: senderAccount,
+      client,
+      keyService
+    });
+
+    // Check receiver is registered
+    const isRegistered = await client.callContractReadFunction({
+      contractAccountId: tokenContract,
+      functionName: 'storage_balance_of',
+      functionArgs: { account_id: receiverId }
+    });
+
+    if (!isRegistered.result) {
+      return {
+        success: false,
+        error: 'Receiver not registered for this token'
+      };
+    }
+
+    // Check sender balance
+    const balance = await client.callContractReadFunction({
+      contractAccountId: tokenContract,
+      functionName: 'ft_balance_of',
+      functionArgs: { account_id: senderAccount }
+    });
+
+    if (BigInt(balance.result) < BigInt(amount)) {
+      return {
+        success: false,
+        error: 'Insufficient token balance'
+      };
+    }
+
+    // Execute transfer
+    const result = await signer.executeTransaction({
+      intent: {
+        action: functionCall({
+          functionName: 'ft_transfer',
+          functionArgs: {
+            receiver_id: receiverId,
+            amount: amount,
+            memo: 'Token transfer'
+          },
+          gasLimit: teraGas('30'),
+          attachedDeposit: yoctoNear('1')
+        }),
+        receiverAccountId: tokenContract
+      }
+    });
+
+    return {
+      success: true,
+      transactionId: result.transactionOutcome.id
+    };
+  } catch (error) {
+    if (isNatError(error, 'MemorySigner.ExecuteTransaction.Rpc.Execution.Failed')) {
+      return {
+        success: false,
+        error: 'Contract execution failed'
+      };
+    }
+    return {
+      success: false,
+      error: 'Transfer failed'
+    };
+  }
+}
+
+// Usage
+const result = await transferTokens(
+  'sender.testnet',
+  'ed25519:your-private-key',
+  'token.testnet',
+  'receiver.testnet',
+  '1000000'
+);
+
+if (result.success) {
+  console.log('Transfer successful!');
+  console.log('Transaction:', result.transactionId);
+} else {
+  console.error('Transfer failed:', result.error);
+}
+```
+
+## Best Practices
+
+### Always Check Storage
+
+Most contracts require storage deposits:
+
+```typescript
+// Check storage requirements
+const storageBalance = await client.callContractReadFunction({
+  contractAccountId: 'contract.testnet',
+  functionName: 'storage_balance_of',
+  functionArgs: { account_id: 'user.testnet' }
+});
+
+if (!storageBalance.result) {
+  // Register user first
+  await signer.executeTransaction({
+    intent: {
+      action: functionCall({
+        functionName: 'storage_deposit',
+        functionArgs: { account_id: 'user.testnet' },
+        gasLimit: teraGas('30'),
+        attachedDeposit: near('0.00125')
+      }),
+      receiverAccountId: 'contract.testnet'
+    }
+  });
+}
+```
+
+### Use Appropriate Gas Limits
+
+```typescript
+// Simple operations: 30 TGas
+const gasForSimple = teraGas('30');
+
+// Complex operations: 50-100 TGas
+const gasForComplex = teraGas('100');
+
+// Cross-contract calls: 150-300 TGas
+const gasForCrossContract = teraGas('200');
+```
+
+### Validate Contract Responses
+
+```typescript
+const result = await client.callContractReadFunction({
+  contractAccountId: 'contract.testnet',
+  functionName: 'get_data',
+  functionArgs: { id: 123 }
+});
+
+if (!result.result) {
+  throw new Error('No data returned');
+}
+
+// Validate structure
+if (!result.result.id || !result.result.owner) {
+  throw new Error('Invalid data structure');
+}
+```
+
+### Handle Transaction Failures
+
+```typescript
+try {
+  const result = await signer.executeTransaction({ intent });
+  
+  // Check execution status
+  const status = result.transactionOutcome.outcome.status;
+  if ('Failure' in status) {
+    console.error('Transaction failed:', status.Failure);
+  }
+} catch (error) {
+  if (isNatError(error, 'MemorySigner.ExecuteTransaction.Rpc.Execution.Failed')) {
+    console.error('Contract execution failed');
+  }
+}
+```
+
+## Next Steps
+
+- [Managing Keys](/guides/managing-keys) - Secure key management
+- [Tokens and Gas](/guides/tokens-and-gas) - Understanding NEAR economics
+- [Sending Transactions](/guides/sending-transactions) - Advanced transaction patterns

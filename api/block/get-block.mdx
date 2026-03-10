@@ -1,0 +1,141 @@
+---
+title: "getBlock"
+description: "Query block information by block reference"
+---
+
+## Overview
+
+The `getBlock` method retrieves detailed information about a specific block on the NEAR blockchain. You can query blocks by height, hash, or use predefined finality levels.
+
+## Method Signature
+
+```typescript
+getBlock(args?: GetBlockArgs): Promise<GetBlockOutcome>
+safeGetBlock(args?: GetBlockArgs): Promise<Result<GetBlockOutcome, GetBlockError>>
+```
+
+## Parameters
+
+<ParamField path="blockReference" type="BlockReference" optional>
+  Reference to the block you want to query. Can be:
+  - `{ blockHeight: number }` - Query by block height
+  - `{ blockHash: string }` - Query by block hash
+  - `'LatestOptimisticBlock'` - Latest optimistic block
+  - `'LatestNearFinalBlock'` - Latest near-final block (default)
+  - `'LatestFinalBlock'` - Latest final block
+  - `'EarliestAvailableBlock'` - Earliest available block
+  - `'GenesisBlock'` - Genesis block
+</ParamField>
+
+<ParamField path="policies.transport" type="PartialTransportPolicy" optional>
+  Transport policy for RPC request handling
+</ParamField>
+
+<ParamField path="options.signal" type="AbortSignal" optional>
+  AbortSignal to cancel the request
+</ParamField>
+
+## Return Value
+
+<ResponseField name="rawRpcResult" type="RpcBlockResponse">
+  The raw RPC response containing block information including:
+  - Block header (height, hash, timestamp)
+  - Block author
+  - Chunks information
+  - Gas and balance data
+</ResponseField>
+
+## Error Types
+
+The `safeGetBlock` method returns typed errors:
+
+- `Client.GetBlock.Args.InvalidSchema` - Invalid arguments provided
+- `Client.GetBlock.PreferredRpc.NotFound` - Preferred RPC endpoint not found
+- `Client.GetBlock.Timeout` - Request timeout
+- `Client.GetBlock.Aborted` - Request aborted
+- `Client.GetBlock.Exhausted` - All RPC endpoints exhausted
+- `Client.GetBlock.Rpc.NotSynced` - RPC node not synced
+- `Client.GetBlock.Rpc.Block.NotFound` - Block not found
+- `Client.GetBlock.Internal` - Internal error
+
+## Examples
+
+### Get Latest Block
+
+```typescript
+const block = await client.getBlock();
+console.log('Latest block height:', block.rawRpcResult.header.height);
+```
+
+### Get Block by Height
+
+```typescript
+const block = await client.getBlock({
+  blockReference: { blockHeight: 1000 }
+});
+console.log('Block hash:', block.rawRpcResult.header.hash);
+```
+
+### Get Block by Hash
+
+```typescript
+const block = await client.getBlock({
+  blockReference: { 
+    blockHash: 'UQcU8hMLAG96mBFEW8rwn5hj1icKbgVUE4G3QKUB5gy'
+  }
+});
+```
+
+### Get Final Block
+
+```typescript
+const block = await client.getBlock({
+  blockReference: 'LatestFinalBlock'
+});
+```
+
+### Safe Usage with Error Handling
+
+```typescript
+const result = await client.safeGetBlock({
+  blockReference: { blockHeight: 1000 }
+});
+
+if (result.ok) {
+  console.log('Block:', result.value.rawRpcResult);
+} else {
+  switch (result.error.kind) {
+    case 'Client.GetBlock.Rpc.Block.NotFound':
+      console.error('Block not found');
+      break;
+    case 'Client.GetBlock.Timeout':
+      console.error('Request timed out');
+      break;
+    default:
+      console.error('Error:', result.error);
+  }
+}
+```
+
+### With Abort Signal
+
+```typescript
+const controller = new AbortController();
+
+// Cancel after 5 seconds
+setTimeout(() => controller.abort(), 5000);
+
+const block = await client.getBlock({
+  options: { signal: controller.signal }
+});
+```
+
+## Source Code
+
+- Implementation: `universal/src/client/methods/block/getBlock/getBlock.ts:20`
+- Type definitions: `universal/types/client/methods/block/getBlock.ts:21`
+
+## Related
+
+- [Client](/api/client) - Creating a client instance
+- [Transport Policy](/api/transport) - Configuring RPC transport

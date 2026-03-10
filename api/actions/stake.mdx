@@ -1,0 +1,402 @@
+---
+title: 'stake'
+description: 'Stake NEAR tokens with a validator'
+---
+
+## Overview
+
+The `stake` action stakes NEAR tokens with a validator to earn rewards and participate in network consensus. Staking helps secure the NEAR network while earning yields.
+
+## Signature
+
+```typescript
+stake(args: {
+  amount: NearTokenArgs,
+  validatorPublicKey: string
+}): StakeAction
+```
+
+## Parameters
+
+<ParamField path="amount" type="NearTokenArgs" required>
+  The amount of NEAR tokens to stake. Can be specified as:
+  - `{ near: string | number }` - Amount in NEAR
+  - `{ yoctoNear: string | bigint }` - Amount in yoctoNEAR
+</ParamField>
+
+<ParamField path="validatorPublicKey" type="string" required>
+  The public key of the validator to stake with. Format: `ed25519:` followed by the base58-encoded key.
+</ParamField>
+
+## Returns
+
+A `StakeAction` object:
+
+```typescript
+{
+  actionType: 'Stake',
+  amount: NearTokenArgs,
+  validatorPublicKey: string
+}
+```
+
+## Basic Example
+
+```typescript
+import { stake, near } from '@near-api-ts/universal';
+
+const action = stake({
+  amount: near('1000'),
+  validatorPublicKey: 'ed25519:ValidatorPublicKeyHere...'
+});
+
+await signer.executeTransaction({
+  intent: {
+    receiverAccountId: 'alice.near',
+    action
+  }
+});
+
+console.log('Tokens staked successfully');
+```
+
+<Info>
+Staking is done from and to the same account. The `receiverAccountId` is the account that will stake the tokens.
+</Info>
+
+## Stake with Known Validator
+
+```typescript
+import { stake, near } from '@near-api-ts/universal';
+
+// Stake with a specific validator
+const validatorKey = 'ed25519:6DSjZ8mvsRZDvFqFxo8tCKePG96omXW7eVYVSySmDk8e';
+
+await signer.executeTransaction({
+  intent: {
+    receiverAccountId: 'alice.near',
+    action: stake({
+      amount: near('100'),
+      validatorPublicKey: validatorKey
+    })
+  }
+});
+```
+
+## Find Validators
+
+```typescript
+import { stake, near } from '@near-api-ts/universal';
+
+// Get list of validators from RPC
+const validators = await client.getValidators();
+
+// Choose validator with good performance
+const validator = validators.currentValidators.find(v => 
+  v.is_slashed === false && 
+  v.num_expected_blocks > 0
+);
+
+if (validator) {
+  await signer.executeTransaction({
+    intent: {
+      receiverAccountId: 'alice.near',
+      action: stake({
+        amount: near('500'),
+        validatorPublicKey: validator.public_key
+      })
+    }
+  });
+}
+```
+
+## Unstake Tokens
+
+To unstake, stake 0 tokens:
+
+```typescript
+import { stake, near } from '@near-api-ts/universal';
+
+await signer.executeTransaction({
+  intent: {
+    receiverAccountId: 'alice.near',
+    action: stake({
+      amount: near('0'),
+      validatorPublicKey: 'ed25519:ValidatorPublicKeyHere...'
+    })
+  }
+});
+
+console.log('Unstaking initiated');
+```
+
+<Warning>
+Unstaking has a delay (typically 4 epochs, ~2 days on mainnet). Your tokens will be locked during this period.
+</Warning>
+
+## Update Stake Amount
+
+```typescript
+import { stake, near } from '@near-api-ts/universal';
+
+const validatorKey = 'ed25519:ValidatorPublicKeyHere...';
+
+// Increase stake
+await signer.executeTransaction({
+  intent: {
+    receiverAccountId: 'alice.near',
+    action: stake({
+      amount: near('2000'), // New total amount
+      validatorPublicKey: validatorKey
+    })
+  }
+});
+```
+
+<Note>
+The stake amount is the new total, not an additional amount. If you have 1000 NEAR staked and stake 2000 NEAR, you'll have 2000 NEAR staked total (not 3000).
+</Note>
+
+## Check Staking Status
+
+```typescript
+import { stake, near } from '@near-api-ts/universal';
+
+// Get account staking info
+const accountInfo = await client.getAccountInfo({
+  accountId: 'alice.near'
+});
+
+console.log('Staked balance:', accountInfo.staked);
+console.log('Available balance:', accountInfo.amount);
+
+if (BigInt(accountInfo.staked) > 0n) {
+  console.log('Account is currently staking');
+}
+```
+
+## Stake Minimum Amount
+
+```typescript
+import { stake, near } from '@near-api-ts/universal';
+
+// Check validator minimum stake
+const MINIMUM_STAKE = near('1'); // Varies by validator
+
+try {
+  await signer.executeTransaction({
+    intent: {
+      receiverAccountId: 'alice.near',
+      action: stake({
+        amount: MINIMUM_STAKE,
+        validatorPublicKey: 'ed25519:ValidatorPublicKeyHere...'
+      })
+    }
+  });
+} catch (error) {
+  if (isNatError(error) && 
+      error.kind === 'MemorySigner.ExecuteTransaction.Rpc.Transaction.Action.Stake.BelowThreshold') {
+    console.error('Stake amount below minimum threshold');
+  }
+}
+```
+
+## Change Validators
+
+```typescript
+import { stake, near } from '@near-api-ts/universal';
+
+const oldValidatorKey = 'ed25519:OldValidatorKey...';
+const newValidatorKey = 'ed25519:NewValidatorKey...';
+
+// Unstake from old validator
+await signer.executeTransaction({
+  intent: {
+    receiverAccountId: 'alice.near',
+    action: stake({
+      amount: near('0'),
+      validatorPublicKey: oldValidatorKey
+    })
+  }
+});
+
+console.log('Wait for unstaking period (4 epochs)...');
+
+// After unstaking period, stake with new validator
+await signer.executeTransaction({
+  intent: {
+    receiverAccountId: 'alice.near',
+    action: stake({
+      amount: near('1000'),
+      validatorPublicKey: newValidatorKey
+    })
+  }
+});
+```
+
+## Error Handling
+
+```typescript
+import { stake, near, isNatError } from '@near-api-ts/universal';
+
+try {
+  await signer.executeTransaction({
+    intent: {
+      receiverAccountId: 'alice.near',
+      action: stake({
+        amount: near('1000'),
+        validatorPublicKey: 'ed25519:ValidatorKey...'
+      })
+    }
+  });
+} catch (error) {
+  if (isNatError(error)) {
+    switch (error.kind) {
+      case 'CreateAction.Stake.Args.InvalidSchema':
+        console.error('Invalid stake parameters');
+        break;
+      case 'MemorySigner.ExecuteTransaction.Rpc.Transaction.Action.Stake.BelowThreshold':
+        console.error('Stake amount below minimum');
+        break;
+      case 'MemorySigner.ExecuteTransaction.Rpc.Transaction.Action.Stake.Balance.TooLow':
+        console.error('Insufficient balance for staking');
+        break;
+      case 'MemorySigner.ExecuteTransaction.Rpc.Transaction.Action.Stake.NotFound':
+        console.error('Validator not found');
+        break;
+      default:
+        console.error('Staking failed:', error.kind);
+    }
+  }
+}
+```
+
+## Safe Variant
+
+```typescript
+import { safeStake, near } from '@near-api-ts/universal';
+
+const actionResult = safeStake({
+  amount: near('1000'),
+  validatorPublicKey: 'ed25519:ValidatorKey...'
+});
+
+if (!actionResult.ok) {
+  console.error('Invalid stake action:', actionResult.error.kind);
+  return;
+}
+
+const result = await signer.safeExecuteTransaction({
+  intent: {
+    receiverAccountId: 'alice.near',
+    action: actionResult.value
+  }
+});
+
+if (result.ok) {
+  console.log('Staked successfully:', result.value.transactionHash);
+} else {
+  console.error('Staking failed:', result.error.kind);
+}
+```
+
+## Calculate Expected Rewards
+
+```typescript
+import { stake, near } from '@near-api-ts/universal';
+
+const stakeAmount = 1000; // NEAR
+const annualAPY = 0.10; // 10% APY (example)
+
+const dailyRewards = (stakeAmount * annualAPY) / 365;
+const monthlyRewards = (stakeAmount * annualAPY) / 12;
+const yearlyRewards = stakeAmount * annualAPY;
+
+console.log(`Staking ${stakeAmount} NEAR at ${annualAPY * 100}% APY:`);
+console.log(`Daily rewards: ~${dailyRewards.toFixed(4)} NEAR`);
+console.log(`Monthly rewards: ~${monthlyRewards.toFixed(2)} NEAR`);
+console.log(`Yearly rewards: ~${yearlyRewards.toFixed(2)} NEAR`);
+
+await signer.executeTransaction({
+  intent: {
+    receiverAccountId: 'alice.near',
+    action: stake({
+      amount: near(stakeAmount.toString()),
+      validatorPublicKey: 'ed25519:ValidatorKey...'
+    })
+  }
+});
+```
+
+## Common Errors
+
+- `CreateAction.Stake.Args.InvalidSchema` - Invalid parameters
+- `CreateAction.Stake.Internal` - Internal error
+- `MemorySigner.ExecuteTransaction.Rpc.Transaction.Action.Stake.BelowThreshold` - Amount below minimum
+- `MemorySigner.ExecuteTransaction.Rpc.Transaction.Action.Stake.Balance.TooLow` - Insufficient account balance
+- `MemorySigner.ExecuteTransaction.Rpc.Transaction.Action.Stake.NotFound` - Validator not found or not active
+
+## Important Notes
+
+<Warning>
+**Staking Risks:**
+- Tokens are locked during unstaking period (~2 days)
+- Validators can be slashed for misbehavior
+- Your stake could be affected if validator is slashed
+- Choose reputable validators with good track records
+</Warning>
+
+<Info>
+**Staking Mechanics:**
+- Rewards are automatically compounded
+- Unstaking takes 4 epochs (approximately 48 hours)
+- Minimum stake varies by validator
+- You can only stake with one validator at a time per account
+</Info>
+
+<Note>
+**Validator Selection:**
+Consider these factors when choosing a validator:
+- Uptime and reliability
+- Commission rate
+- Total stake (not too large or too small)
+- Reputation in the community
+- Geographic diversity
+</Note>
+
+## Best Practices
+
+<Check>
+**DO:**
+- Research validators before staking
+- Start with a small amount to test
+- Monitor validator performance regularly
+- Understand the unstaking period
+- Keep some NEAR unstaked for transactions
+- Diversify across multiple accounts if staking large amounts
+</Check>
+
+<Warning>
+**DON'T:**
+- Don't stake all your NEAR (keep some for gas)
+- Don't stake with unknown validators
+- Don't expect instant unstaking
+- Don't ignore validator performance changes
+- Don't forget about the lock-up period
+</Warning>
+
+## Staking Checklist
+
+- [ ] Account has sufficient balance
+- [ ] Validator is active and not slashed
+- [ ] Amount meets validator's minimum
+- [ ] Understood unstaking delay
+- [ ] Kept NEAR for gas fees
+- [ ] Validator research completed
+
+## See Also
+
+- [executeTransaction](/api/signers/execute-transaction) - Execute transactions
+- [transfer](/api/actions/transfer) - Transfer NEAR tokens
+- [NEAR Token Helpers](/api/helpers/near-token) - Token amount helpers
+- [Validator Selection Guide](/guides/staking/choose-validator) - How to choose validators

@@ -1,0 +1,223 @@
+---
+title: 'executeTransaction'
+description: 'Sign and execute transactions on the NEAR blockchain'
+---
+
+## Overview
+
+`executeTransaction()` is a method on `MemorySigner` that signs a transaction and sends it to the NEAR blockchain in a single operation. It automatically handles nonce management, block hash retrieval, and transaction signing.
+
+## Signature
+
+```typescript
+executeTransaction(args: {
+  intent: TransactionIntent
+}): Promise<SendSignedTransactionOutput>
+```
+
+## Parameters
+
+<ParamField path="intent" type="TransactionIntent" required>
+  The transaction intent containing the receiver and action(s)
+  
+  <Expandable title="properties">
+    <ParamField path="receiverAccountId" type="string" required>
+      The account ID that will receive the transaction
+    </ParamField>
+    
+    <ParamField path="action" type="Action">
+      A single action to execute (use either `action` or `actions`, not both)
+    </ParamField>
+    
+    <ParamField path="actions" type="Action[]">
+      Multiple actions to execute in sequence (use either `action` or `actions`, not both)
+    </ParamField>
+  </Expandable>
+</ParamField>
+
+## Returns
+
+Returns a `Promise` that resolves to `SendSignedTransactionOutput`:
+
+- `transactionHash` - The hash of the transaction
+- `signedTransaction` - The signed transaction object
+- `result` - The transaction execution result from the RPC
+
+## Single Action Example
+
+```typescript
+import { transfer, near } from '@near-api-ts/universal';
+
+const result = await signer.executeTransaction({
+  intent: {
+    receiverAccountId: 'bob.near',
+    action: transfer({ amount: near('2.5') })
+  }
+});
+
+console.log('Transaction hash:', result.transactionHash);
+console.log('Status:', result.result.status);
+```
+
+## Multiple Actions Example
+
+```typescript
+import { 
+  createAccount,
+  transfer,
+  addFullAccessKey,
+  near,
+  keyPair
+} from '@near-api-ts/universal';
+
+const newKeyPair = randomEd25519KeyPair();
+
+const result = await signer.executeTransaction({
+  intent: {
+    receiverAccountId: 'sub.alice.near',
+    actions: [
+      createAccount(),
+      transfer({ amount: near('10') }),
+      addFullAccessKey({ publicKey: newKeyPair.publicKey })
+    ]
+  }
+});
+```
+
+## Function Call Example
+
+```typescript
+import { functionCall, teraGas } from '@near-api-ts/universal';
+
+const result = await signer.executeTransaction({
+  intent: {
+    receiverAccountId: 'contract.near',
+    action: functionCall({
+      functionName: 'set_status',
+      functionArgs: { message: 'Hello NEAR!' },
+      gasLimit: teraGas('30'),
+      attachedDeposit: near('0')
+    })
+  }
+});
+
+const returnValue = result.result.returnValue;
+```
+
+## Deploy Contract Example
+
+```typescript
+import { deployContract } from '@near-api-ts/universal';
+import { readFile } from 'fs/promises';
+
+const wasmBytes = await readFile('./contract.wasm');
+
+const result = await signer.executeTransaction({
+  intent: {
+    receiverAccountId: 'contract.near',
+    action: deployContract({ wasmBytes })
+  }
+});
+```
+
+## Error Handling
+
+### Throwing Variant
+
+```typescript
+try {
+  const result = await signer.executeTransaction({ intent });
+  console.log('Success:', result.transactionHash);
+} catch (error) {
+  if (isNatError(error)) {
+    console.error('Error type:', error.kind);
+    console.error('Context:', error.context);
+  }
+}
+```
+
+### Safe Variant
+
+For explicit error handling, use `safeExecuteTransaction()`:
+
+```typescript
+const result = await signer.safeExecuteTransaction({ intent });
+
+if (result.ok) {
+  console.log('Success:', result.value.transactionHash);
+} else {
+  switch (result.error.kind) {
+    case 'MemorySigner.ExecuteTransaction.KeyPool.SigningKey.NotFound':
+      console.error('No valid signing key found');
+      break;
+    case 'MemorySigner.ExecuteTransaction.Rpc.Transaction.Signer.Balance.TooLow':
+      console.error('Insufficient balance');
+      break;
+    case 'MemorySigner.ExecuteTransaction.Timeout':
+      console.error('Transaction timed out');
+      break;
+    default:
+      console.error('Unknown error:', result.error.kind);
+  }
+}
+```
+
+## Common Errors
+
+### Validation Errors
+
+- `MemorySigner.ExecuteTransaction.Args.InvalidSchema` - Invalid transaction intent format
+
+### Key Management Errors
+
+- `MemorySigner.ExecuteTransaction.KeyPool.AccessKeys.NotLoaded` - Access keys not loaded from blockchain
+- `MemorySigner.ExecuteTransaction.KeyPool.Empty` - No keys available in the key pool
+- `MemorySigner.ExecuteTransaction.KeyPool.SigningKey.NotFound` - No key with required permissions found
+
+### Network Errors
+
+- `MemorySigner.ExecuteTransaction.PreferredRpc.NotFound` - No RPC endpoint available
+- `MemorySigner.ExecuteTransaction.Timeout` - Request timed out
+- `MemorySigner.ExecuteTransaction.Aborted` - Request was aborted
+- `MemorySigner.ExecuteTransaction.Exhausted` - All RPC endpoints failed
+
+### Transaction Errors
+
+- `MemorySigner.ExecuteTransaction.Rpc.Transaction.Signer.Balance.TooLow` - Insufficient account balance
+- `MemorySigner.ExecuteTransaction.Rpc.Transaction.Receiver.NotFound` - Receiver account doesn't exist
+- `MemorySigner.ExecuteTransaction.Rpc.Transaction.Timeout` - Transaction timed out on chain
+
+### Action-Specific Errors
+
+- `MemorySigner.ExecuteTransaction.Rpc.Transaction.Action.CreateAccount.AlreadyExist` - Account already exists
+- `MemorySigner.ExecuteTransaction.Rpc.Transaction.Action.Stake.BelowThreshold` - Stake amount below minimum
+- `MemorySigner.ExecuteTransaction.Rpc.Transaction.Action.Stake.Balance.TooLow` - Insufficient balance for staking
+- `MemorySigner.ExecuteTransaction.Rpc.Transaction.Action.Stake.NotFound` - Validator not found
+
+### Internal Errors
+
+- `MemorySigner.ExecuteTransaction.Internal` - Unexpected internal error
+
+## Transaction Options
+
+You can customize transaction behavior with options:
+
+```typescript
+const result = await signer.executeTransaction({
+  intent: {
+    receiverAccountId: 'bob.near',
+    action: transfer({ amount: near('2.5') })
+  },
+  options: {
+    waitUntil: 'EXECUTED_OPTIMISTIC', // or 'NONE', 'FINAL'
+    timeout: 30000 // milliseconds
+  }
+});
+```
+
+## See Also
+
+- [MemorySigner](/api/signers/memory-signer) - Signer setup and configuration
+- [Transfer Action](/api/actions/transfer) - Send NEAR tokens
+- [Function Call Action](/api/actions/function-call) - Call smart contract methods
+- [Deploy Contract Action](/api/actions/deploy-contract) - Deploy smart contracts

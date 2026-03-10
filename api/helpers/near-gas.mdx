@@ -1,0 +1,226 @@
+---
+title: "NEAR Gas Helpers"
+description: "Functions for creating and manipulating NEAR gas amounts"
+---
+
+The NEAR gas helpers provide convenient functions for working with gas amounts, handling conversions between gas units and TerraGas.
+
+## Overview
+
+1 TerraGas = 10^12 gas units
+
+The library provides both "safe" variants (return `Result` types) and "throwable" variants (throw errors) for all functions.
+
+## Functions
+
+### gas()
+
+Creates a NearGas object from gas units.
+
+```typescript
+import { gas } from '@near-api/universal';
+
+const gasAmount = gas(300000000000000n);
+console.log(gasAmount.gas);      // 300000000000000n
+console.log(gasAmount.teraGas);  // "300"
+```
+
+**Parameters:**
+- `gas` (bigint | number): Amount in gas units
+
+**Returns:** `NearGas`
+
+**Safe variant:** `safeGas()`
+
+### teraGas()
+
+Creates a NearGas object from TerraGas.
+
+```typescript
+import { teraGas } from '@near-api/universal';
+
+const gasAmount = teraGas('300');
+console.log(gasAmount.gas);      // 300000000000000n
+console.log(gasAmount.teraGas);  // "300"
+```
+
+**Parameters:**
+- `teraGas` (string): Amount in TerraGas with up to 12 decimal places
+
+**Returns:** `NearGas`
+
+**Safe variant:** `safeTeraGas()`
+
+### nearGas()
+
+Creates a NearGas object from either gas units or TerraGas.
+
+```typescript
+import { nearGas } from '@near-api/universal';
+
+// From gas units
+const gas1 = nearGas({ gas: 300000000000000n });
+
+// From TerraGas
+const gas2 = nearGas({ teraGas: '300' });
+```
+
+**Parameters:**
+- `args` (object): Either `{ gas: bigint | number }` or `{ teraGas: string }`
+
+**Returns:** `NearGas`
+
+**Safe variant:** `safeNearGas()`
+
+### isNearGas()
+
+Type guard to check if a value is a NearGas object.
+
+```typescript
+import { isNearGas, gas } from '@near-api/universal';
+
+const gasAmount = gas(300000000000000n);
+console.log(isNearGas(gasAmount)); // true
+```
+
+## NearGas Object
+
+The `NearGas` object provides the following properties and methods:
+
+### Properties
+
+- **`gas`** (bigint): Amount in gas units (lazy-loaded)
+- **`teraGas`** (string): Amount in TerraGas (lazy-loaded)
+
+### Methods
+
+#### add()
+
+Add two gas amounts.
+
+```typescript
+const gas1 = teraGas('100');
+const gas2 = teraGas('50');
+const result = gas1.add(gas2);
+console.log(result.teraGas); // "150"
+```
+
+**Safe variant:** `safeAdd()`
+
+#### sub()
+
+Subtract gas amounts.
+
+```typescript
+const gas1 = teraGas('100');
+const gas2 = teraGas('30');
+const result = gas1.sub(gas2);
+console.log(result.teraGas); // "70"
+```
+
+**Safe variant:** `safeSub()`
+
+#### gt()
+
+Compare if greater than.
+
+```typescript
+const gas1 = teraGas('100');
+const gas2 = teraGas('50');
+console.log(gas1.gt(gas2)); // true
+```
+
+**Safe variant:** `safeGt()`
+
+#### lt()
+
+Compare if less than.
+
+```typescript
+const gas1 = teraGas('50');
+const gas2 = teraGas('100');
+console.log(gas1.lt(gas2)); // true
+```
+
+**Safe variant:** `safeLt()`
+
+## Type Definitions
+
+See [NearGas Types](/api/types/common#neargas-types) for complete type information.
+
+## Examples
+
+### Basic Usage
+
+```typescript
+import { gas, teraGas } from '@near-api/universal';
+
+// Create from gas units
+const gas1 = gas(300000000000000n);
+
+// Create from TerraGas
+const gas2 = teraGas('100');
+
+// Perform operations
+const sum = gas1.add(gas2);
+console.log(sum.teraGas); // "400"
+```
+
+### Safe Operations
+
+```typescript
+import { safeTeraGas } from '@near-api/universal';
+
+const result = safeTeraGas('300');
+
+if (result.ok) {
+  console.log(result.value.gas);
+} else {
+  console.error(result.error);
+}
+```
+
+### Function Call Action
+
+```typescript
+import { functionCall, teraGas } from '@near-api/universal';
+
+const action = functionCall({
+  functionName: 'my_method',
+  functionArgs: { key: 'value' },
+  gasLimit: { teraGas: '300' }
+});
+```
+
+### Common Gas Amounts
+
+```typescript
+import { teraGas } from '@near-api/universal';
+
+// Typical function call
+const standardGas = teraGas('300');
+
+// View function (minimal gas)
+const viewGas = teraGas('30');
+
+// Complex operation
+const highGas = teraGas('300');
+```
+
+## Validation
+
+The library validates input:
+
+- **Gas values**: Must be non-negative bigint or integer number
+  - Valid: `300000000000000n`, `300000000000000`
+  - Invalid: `3.5`, `-100n`
+
+- **TerraGas values**: Must be valid decimal strings with up to 12 decimal places
+  - Valid: `"300"`, `"300.5"`, `"0.000000000001"`
+  - Invalid: `".5"`, `"300."`, `"1.5555555555555"` (too many decimals)
+
+## Related
+
+- [NEAR Token Helpers](/api/helpers/near-token)
+- [Function Call Action](/api/actions/function-call)
+- [Common Types](/api/types/common)

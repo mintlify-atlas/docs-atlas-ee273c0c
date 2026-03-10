@@ -1,0 +1,418 @@
+---
+title: 'Add Access Keys'
+description: 'Add full access or function call access keys to NEAR accounts'
+---
+
+## Overview
+
+Access keys grant permissions to sign transactions on behalf of an account. NEAR supports two types:
+
+- **Full Access Keys** - Can perform any action on the account
+- **Function Call Keys** - Limited to calling specific contract methods
+
+## Full Access Keys
+
+### `addFullAccessKey()`
+
+Adds a key with full permissions to an account.
+
+```typescript
+import { addFullAccessKey } from '@near-api-ts/universal';
+
+const action = addFullAccessKey({
+  publicKey: 'ed25519:...',
+});
+```
+
+### Parameters
+
+<ParamField path="publicKey" type="string" required>
+  The public key to add. Format: `ed25519:` or `secp256k1:` followed by the base58-encoded key.
+</ParamField>
+
+### Returns
+
+```typescript
+{
+  actionType: 'AddKey',
+  accessType: 'FullAccess',
+  publicKey: string
+}
+```
+
+### Example
+
+```typescript
+import { addFullAccessKey, randomEd25519KeyPair } from '@near-api-ts/universal';
+
+const newKeyPair = randomEd25519KeyPair();
+
+await signer.executeTransaction({
+  intent: {
+    receiverAccountId: 'alice.near',
+    action: addFullAccessKey({ publicKey: newKeyPair.publicKey })
+  }
+});
+
+console.log('Full access key added:', newKeyPair.publicKey);
+console.log('Private key:', newKeyPair.secretKey);
+```
+
+## Function Call Keys
+
+### `addFunctionCallKey()`
+
+Adds a key with limited permissions to call specific contract methods.
+
+```typescript
+import { addFunctionCallKey } from '@near-api-ts/universal';
+
+const action = addFunctionCallKey({
+  publicKey: 'ed25519:...',
+  contractAccountId: 'contract.near',
+  allowedFunctions: ['method1', 'method2'],
+  gasBudget: { near: '0.25' }
+});
+```
+
+### Parameters
+
+<ParamField path="publicKey" type="string" required>
+  The public key to add
+</ParamField>
+
+<ParamField path="contractAccountId" type="string" required>
+  The contract account that this key can call
+</ParamField>
+
+<ParamField path="allowedFunctions" type="string[]">
+  List of method names this key can call. If omitted, can call any method on the contract.
+</ParamField>
+
+<ParamField path="gasBudget" type="NearTokenArgs">
+  Maximum allowance for gas fees. If omitted, no limit is set.
+</ParamField>
+
+### Returns
+
+```typescript
+{
+  actionType: 'AddKey',
+  accessType: 'FunctionCall',
+  publicKey: string,
+  contractAccountId: string,
+  allowedFunctions?: string[],
+  gasBudget?: NearTokenArgs
+}
+```
+
+### Example
+
+```typescript
+import { addFunctionCallKey, near, randomEd25519KeyPair } from '@near-api-ts/universal';
+
+const limitedKeyPair = randomEd25519KeyPair();
+
+await signer.executeTransaction({
+  intent: {
+    receiverAccountId: 'alice.near',
+    action: addFunctionCallKey({
+      publicKey: limitedKeyPair.publicKey,
+      contractAccountId: 'game.near',
+      allowedFunctions: ['play_move', 'claim_reward'],
+      gasBudget: near('0.25')
+    })
+  }
+});
+```
+
+## Complete Examples
+
+### Add Multiple Keys
+
+```typescript
+import { 
+  addFullAccessKey,
+  addFunctionCallKey,
+  near,
+  randomEd25519KeyPair
+} from '@near-api-ts/universal';
+
+const backupKey = randomEd25519KeyPair();
+const appKey = randomEd25519KeyPair();
+
+await signer.executeTransaction({
+  intent: {
+    receiverAccountId: 'alice.near',
+    actions: [
+      addFullAccessKey({ publicKey: backupKey.publicKey }),
+      addFunctionCallKey({
+        publicKey: appKey.publicKey,
+        contractAccountId: 'app.near',
+        allowedFunctions: ['vote', 'submit'],
+        gasBudget: near('0.25')
+      })
+    ]
+  }
+});
+
+console.log('Backup key:', backupKey.secretKey);
+console.log('App key:', appKey.secretKey);
+```
+
+### Create Account with Keys
+
+```typescript
+import { 
+  createAccount,
+  transfer,
+  addFullAccessKey,
+  addFunctionCallKey,
+  near,
+  randomEd25519KeyPair
+} from '@near-api-ts/universal';
+
+const ownerKey = randomEd25519KeyPair();
+const appKey = randomEd25519KeyPair();
+
+await signer.executeTransaction({
+  intent: {
+    receiverAccountId: 'new.alice.near',
+    actions: [
+      createAccount(),
+      transfer({ amount: near('10') }),
+      addFullAccessKey({ publicKey: ownerKey.publicKey }),
+      addFunctionCallKey({
+        publicKey: appKey.publicKey,
+        contractAccountId: 'app.near',
+        gasBudget: near('0.5')
+      })
+    ]
+  }
+});
+```
+
+### Key Rotation
+
+```typescript
+import { 
+  addFullAccessKey,
+  deleteKey,
+  randomEd25519KeyPair
+} from '@near-api-ts/universal';
+
+const newKeyPair = randomEd25519KeyPair();
+const oldPublicKey = 'ed25519:OldKeyHere...';
+
+// Add new key and remove old key atomically
+await signer.executeTransaction({
+  intent: {
+    receiverAccountId: 'alice.near',
+    actions: [
+      addFullAccessKey({ publicKey: newKeyPair.publicKey }),
+      deleteKey({ publicKey: oldPublicKey })
+    ]
+  }
+});
+
+console.log('Key rotated successfully');
+console.log('New private key:', newKeyPair.secretKey);
+```
+
+<Warning>
+Be careful with key rotation. If you delete all access keys, you'll lose access to the account permanently.
+</Warning>
+
+### App-Specific Keys
+
+```typescript
+import { addFunctionCallKey, near, randomEd25519KeyPair } from '@near-api-ts/universal';
+
+// Key for DEX trading
+const dexKey = randomEd25519KeyPair();
+await signer.executeTransaction({
+  intent: {
+    receiverAccountId: 'alice.near',
+    action: addFunctionCallKey({
+      publicKey: dexKey.publicKey,
+      contractAccountId: 'dex.near',
+      allowedFunctions: ['swap', 'add_liquidity', 'remove_liquidity'],
+      gasBudget: near('1')
+    })
+  }
+});
+
+// Key for NFT marketplace
+const nftKey = randomEd25519KeyPair();
+await signer.executeTransaction({
+  intent: {
+    receiverAccountId: 'alice.near',
+    action: addFunctionCallKey({
+      publicKey: nftKey.publicKey,
+      contractAccountId: 'marketplace.near',
+      allowedFunctions: ['buy', 'make_offer'],
+      gasBudget: near('0.5')
+    })
+  }
+});
+```
+
+### Unlimited Function Calls
+
+```typescript
+import { addFunctionCallKey, randomEd25519KeyPair } from '@near-api-ts/universal';
+
+const appKey = randomEd25519KeyPair();
+
+// Can call any method on the contract
+await signer.executeTransaction({
+  intent: {
+    receiverAccountId: 'alice.near',
+    action: addFunctionCallKey({
+      publicKey: appKey.publicKey,
+      contractAccountId: 'app.near'
+      // No allowedFunctions - can call any method
+      // No gasBudget - no spending limit
+    })
+  }
+});
+```
+
+<Note>
+Function call keys without restrictions can call any method but still cannot transfer tokens directly or delete the account.
+</Note>
+
+### Using Different Key Types
+
+```typescript
+import { 
+  addFullAccessKey,
+  randomEd25519KeyPair,
+  randomSecp256k1KeyPair
+} from '@near-api-ts/universal';
+
+// Ed25519 key (most common)
+const ed25519Key = randomEd25519KeyPair();
+await signer.executeTransaction({
+  intent: {
+    receiverAccountId: 'alice.near',
+    action: addFullAccessKey({ publicKey: ed25519Key.publicKey })
+  }
+});
+
+// Secp256k1 key (compatible with Ethereum)
+const secp256k1Key = randomSecp256k1KeyPair();
+await signer.executeTransaction({
+  intent: {
+    receiverAccountId: 'alice.near',
+    action: addFullAccessKey({ publicKey: secp256k1Key.publicKey })
+  }
+});
+```
+
+## Error Handling
+
+```typescript
+import { 
+  addFullAccessKey,
+  randomEd25519KeyPair,
+  isNatError
+} from '@near-api-ts/universal';
+
+try {
+  const newKeyPair = randomEd25519KeyPair();
+  
+  await signer.executeTransaction({
+    intent: {
+      receiverAccountId: 'alice.near',
+      action: addFullAccessKey({ publicKey: newKeyPair.publicKey })
+    }
+  });
+} catch (error) {
+  if (isNatError(error)) {
+    if (error.kind === 'CreateAction.AddFullAccessKey.Args.InvalidSchema') {
+      console.error('Invalid public key format');
+    }
+  }
+}
+```
+
+## Safe Variants
+
+```typescript
+import { 
+  safeAddFullAccessKey,
+  safeAddFunctionCallKey,
+  near
+} from '@near-api-ts/universal';
+
+// Safe full access key
+const fullKeyResult = safeAddFullAccessKey({ 
+  publicKey: 'ed25519:...' 
+});
+
+if (!fullKeyResult.ok) {
+  console.error('Invalid full access key:', fullKeyResult.error.kind);
+  return;
+}
+
+// Safe function call key
+const funcKeyResult = safeAddFunctionCallKey({
+  publicKey: 'ed25519:...',
+  contractAccountId: 'contract.near',
+  gasBudget: near('0.25')
+});
+
+if (!funcKeyResult.ok) {
+  console.error('Invalid function call key:', funcKeyResult.error.kind);
+  return;
+}
+```
+
+## Common Errors
+
+- `CreateAction.AddFullAccessKey.Args.InvalidSchema` - Invalid public key format
+- `CreateAction.AddFullAccessKey.Internal` - Internal error
+- `CreateAction.AddFunctionCallKey.Args.InvalidSchema` - Invalid parameters
+- `CreateAction.AddFunctionCallKey.Internal` - Internal error
+- Key already exists - Adding a key that's already on the account
+
+## Best Practices
+
+<Check>
+**DO:**
+- Use full access keys for account owners
+- Use function call keys for applications
+- Store private keys securely
+- Set gas budgets on function call keys
+- Limit allowed functions when possible
+- Keep backup keys in secure locations
+- Rotate keys periodically
+</Check>
+
+<Warning>
+**DON'T:**
+- Don't share private keys
+- Don't delete all keys from an account
+- Don't use full access keys in untrusted applications
+- Don't set unlimited gas budgets without good reason
+- Don't lose your private keys - they can't be recovered
+</Warning>
+
+## Key Permission Comparison
+
+| Action | Full Access | Function Call |
+|--------|-------------|---------------|
+| Transfer tokens | ✅ | ❌ |
+| Deploy contracts | ✅ | ❌ |
+| Add/delete keys | ✅ | ❌ |
+| Delete account | ✅ | ❌ |
+| Call contracts | ✅ | ✅ (limited) |
+| Stake tokens | ✅ | ❌ |
+
+## See Also
+
+- [executeTransaction](/api/signers/execute-transaction) - Execute transactions
+- [deleteKey](/api/actions/delete-key) - Remove access keys
+- [createAccount](/api/actions/create-account) - Create accounts with keys
+- [Key Pair Helpers](/api/helpers/key-pair) - Generate key pairs

@@ -1,0 +1,215 @@
+---
+title: "Block Hash"
+description: "Working with block hashes in NEAR API"
+---
+
+## Overview
+
+Block hashes are 32-byte cryptographic identifiers for blocks on the NEAR blockchain. They are used to uniquely identify and reference specific blocks.
+
+## Block Hash Format
+
+Block hashes in the NEAR API are represented as base58-encoded strings:
+
+```typescript
+type BlockHash = string; // Base58-encoded 32-byte hash
+```
+
+<Note>
+  Block hashes are always 32 bytes in length when decoded from base58.
+</Note>
+
+## Using Block Hashes
+
+### Query Block by Hash
+
+You can query a specific block using its hash:
+
+```typescript
+const blockHash = 'UQcU8hMLAG96mBFEW8rwn5hj1icKbgVUE4G3QKUB5gy';
+
+const block = await client.getBlock({
+  blockReference: { blockHash }
+});
+
+console.log('Block height:', block.rawRpcResult.header.height);
+```
+
+### Get Block Hash from Result
+
+When you query a block, the hash is included in the response:
+
+```typescript
+const block = await client.getBlock({
+  blockReference: { blockHeight: 100 }
+});
+
+const blockHash = block.rawRpcResult.header.hash;
+console.log('Block hash:', blockHash);
+```
+
+### Use Block Hash in Transactions
+
+Block hashes are commonly used as the `blockHash` field in transactions to specify the transaction's time-to-live:
+
+```typescript
+import { transfer } from 'near-api-ts';
+
+// Get recent block
+const block = await client.getBlock();
+const recentBlockHash = block.rawRpcResult.header.hash;
+
+// Create transaction with block hash
+const transaction = {
+  signerAccountId: 'sender.near',
+  signerPublicKey: keyPair.publicKey,
+  receiverAccountId: 'receiver.near',
+  nonce: 1,
+  blockHash: recentBlockHash, // Transaction expires after ~2 blocks
+  action: transfer({ amount: { near: '1' } })
+};
+```
+
+## Block Reference Types
+
+When working with blocks, you can use several reference types:
+
+### By Hash
+
+```typescript
+type BlockHashReference = {
+  blockHash: string;
+};
+
+const block = await client.getBlock({
+  blockReference: { blockHash: 'ABC...' }
+});
+```
+
+### By Height
+
+```typescript
+type BlockHeightReference = {
+  blockHeight: number;
+};
+
+const block = await client.getBlock({
+  blockReference: { blockHeight: 1000 }
+});
+```
+
+### By Finality
+
+```typescript
+type FinalityReference = 
+  | 'LatestOptimisticBlock'
+  | 'LatestNearFinalBlock'
+  | 'LatestFinalBlock';
+
+const block = await client.getBlock({
+  blockReference: 'LatestFinalBlock'
+});
+```
+
+## Block Hash Validation
+
+<Warning>
+  Always validate block hashes before using them in production:
+  - Must be valid base58 encoding
+  - Must decode to exactly 32 bytes
+  - Should exist on the blockchain
+</Warning>
+
+### Safe Block Query
+
+```typescript
+const result = await client.safeGetBlock({
+  blockReference: { blockHash: userProvidedHash }
+});
+
+if (!result.ok) {
+  if (result.error.kind === 'Client.GetBlock.Rpc.Block.NotFound') {
+    console.error('Block hash does not exist');
+  } else if (result.error.kind === 'Client.GetBlock.Args.InvalidSchema') {
+    console.error('Invalid block hash format');
+  }
+}
+```
+
+## Best Practices
+
+<AccordionGroup>
+  <Accordion title="Use Recent Block Hashes">
+    When creating transactions, always use a recent block hash (within the last few minutes). Block hashes older than approximately 2 blocks become invalid for new transactions.
+
+    ```typescript
+    // Good: Get fresh block hash
+    const block = await client.getBlock();
+    const tx = createTransaction({ blockHash: block.rawRpcResult.header.hash });
+    ```
+  </Accordion>
+
+  <Accordion title="Cache Block Information">
+    If you need to reference the same block multiple times, cache the block information rather than querying repeatedly:
+
+    ```typescript
+    const blockCache = new Map<string, Block>();
+
+    async function getBlockCached(blockHash: string) {
+      if (!blockCache.has(blockHash)) {
+        const block = await client.getBlock({ blockReference: { blockHash } });
+        blockCache.set(blockHash, block);
+      }
+      return blockCache.get(blockHash);
+    }
+    ```
+  </Accordion>
+
+  <Accordion title="Handle Missing Blocks">
+    Not all block hashes exist on the network. Always handle the case where a block is not found:
+
+    ```typescript
+    const result = await client.safeGetBlock({
+      blockReference: { blockHash }
+    });
+
+    if (!result.ok && result.error.kind === 'Client.GetBlock.Rpc.Block.NotFound') {
+      // Handle missing block
+      console.log('Block does not exist');
+    }
+    ```
+  </Accordion>
+</AccordionGroup>
+
+## Type Definitions
+
+```typescript
+// Core types
+type CryptoHash = string; // 32-byte hash
+type BlockHash = CryptoHash;
+
+type BlockId = 
+  | { blockHash: BlockHash }
+  | { blockHeight: BlockHeight };
+
+type BlockReference = 
+  | LatestBlock 
+  | SyncCheckpoint 
+  | BlockId;
+
+// Native RPC format
+type NativeBlockReference =
+  | { block_id: BlockHash | BlockHeight }
+  | { finality: 'optimistic' | 'near-final' | 'final' }
+  | { sync_checkpoint: 'genesis' | 'earliest_available' };
+```
+
+## Source Code
+
+- Type definitions: `universal/types/_common/common.ts:6`
+- Block reference transformer: `universal/src/_common/transformers/toNative/blockReference.ts:1`
+
+## Related
+
+- [getBlock](/api/block/get-block) - Query block information
+- [Transactions](/api/transaction) - Creating and signing transactions

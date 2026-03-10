@@ -1,0 +1,491 @@
+---
+title: "IDB Key Service"
+description: "Browser-based key storage using IndexedDB"
+---
+
+## Overview
+
+The IDB Key Service provides persistent, browser-based storage for private keys using IndexedDB. Keys are stored securely in the browser's local database and automatically loaded when needed.
+
+<Note>
+  IDB Key Service is only available in browser environments. For Node.js applications, use [File Key Service](/api/key-services/file-key-service).
+</Note>
+
+## Creating an IDB Key Service
+
+### Method Signature
+
+```typescript
+createIdbKeyService(args?: CreateIdbKeyServiceArgs): IdbKeyService
+safeCreateIdbKeyService(args?: CreateIdbKeyServiceArgs): Result<IdbKeyService, Error>
+```
+
+### Parameters
+
+<ParamField path="idbName" type="string" optional>
+  Name of the IndexedDB database. Defaults to `'near-api-ts'`.
+</ParamField>
+
+## Interface
+
+The IDB Key Service implements the following interface:
+
+```typescript
+interface IdbKeyService {
+  // Add a key to the service
+  addKey(keyPair: KeyPair): Promise<void>;
+  safeAddKey(keyPair: KeyPair): Promise<Result<void, Error>>;
+  
+  // Check if a key exists
+  hasKey(publicKey: PublicKey): Promise<boolean>;
+  safeHasKey(publicKey: PublicKey): Promise<Result<boolean, Error>>;
+  
+  // Remove a key from the service
+  removeKey(publicKey: PublicKey): Promise<void>;
+  safeRemoveKey(publicKey: PublicKey): Promise<Result<void, Error>>;
+  
+  // Clear all keys
+  clear(): Promise<void>;
+  safeClear(): Promise<Result<void, Error>>;
+  
+  // Sign a transaction
+  signTransaction(args: SignTransactionArgs): Promise<SignedTransaction>;
+  safeSignTransaction(args: SignTransactionArgs): Promise<Result<SignedTransaction, Error>>;
+}
+```
+
+## Examples
+
+### Create with Default Database
+
+```typescript
+import { createIdbKeyService } from 'near-api-ts/browser';
+
+// Keys stored in IndexedDB database named 'near-api-ts'
+const keyService = createIdbKeyService();
+
+console.log('IDB key service ready');
+```
+
+### Create with Custom Database Name
+
+```typescript
+import { createIdbKeyService } from 'near-api-ts/browser';
+
+// Store keys in a custom IndexedDB database
+const keyService = createIdbKeyService({
+  idbName: 'my-app-keys'
+});
+```
+
+### Add Key
+
+```typescript
+import { createIdbKeyService, randomEd25519KeyPair } from 'near-api-ts';
+
+const keyService = createIdbKeyService();
+const keyPair = randomEd25519KeyPair();
+
+// Add key (persists to IndexedDB)
+await keyService.addKey(keyPair);
+
+console.log('Key added:', keyPair.publicKey);
+```
+
+### Check if Key Exists
+
+```typescript
+const exists = await keyService.hasKey(keyPair.publicKey);
+
+if (exists) {
+  console.log('Key exists in storage');
+} else {
+  console.log('Key not found');
+}
+```
+
+### Remove Key
+
+```typescript
+import { createIdbKeyService, randomEd25519KeyPair } from 'near-api-ts';
+
+const keyService = createIdbKeyService();
+const keyPair = randomEd25519KeyPair();
+
+// Add and then remove
+await keyService.addKey(keyPair);
+await keyService.removeKey(keyPair.publicKey);
+
+console.log('Key removed');
+```
+
+### Clear All Keys
+
+```typescript
+// Remove all stored keys
+await keyService.clear();
+
+console.log('All keys cleared');
+```
+
+### Sign Transaction
+
+```typescript
+import { 
+  createIdbKeyService, 
+  randomEd25519KeyPair, 
+  transfer 
+} from 'near-api-ts';
+
+const keyService = createIdbKeyService();
+const keyPair = randomEd25519KeyPair();
+
+// Add key to service
+await keyService.addKey(keyPair);
+
+// Get recent block hash
+const block = await client.getBlock();
+
+// Sign transaction
+const signedTx = await keyService.signTransaction({
+  transaction: {
+    signerAccountId: 'sender.near',
+    signerPublicKey: keyPair.publicKey,
+    receiverAccountId: 'receiver.near',
+    nonce: 1,
+    blockHash: block.rawRpcResult.header.hash,
+    action: transfer({ amount: { near: '1' } })
+  }
+});
+
+console.log('Transaction signed');
+```
+
+### Safe Operations with Error Handling
+
+```typescript
+import { createIdbKeyService, randomEd25519KeyPair } from 'near-api-ts';
+
+const keyPair = randomEd25519KeyPair();
+const keyService = createIdbKeyService();
+
+// Safe add
+const addResult = await keyService.safeAddKey(keyPair);
+if (!addResult.ok) {
+  console.error('Failed to add key:', addResult.error);
+  return;
+}
+
+// Safe sign
+const signResult = await keyService.safeSignTransaction({
+  transaction: {
+    signerAccountId: 'sender.near',
+    signerPublicKey: keyPair.publicKey,
+    receiverAccountId: 'receiver.near',
+    nonce: 1,
+    blockHash: recentBlockHash,
+    action: transfer({ amount: { near: '1' } })
+  }
+});
+
+if (signResult.ok) {
+  console.log('Transaction signed:', signResult.value);
+} else {
+  console.error('Failed to sign:', signResult.error);
+}
+
+// Clean up
+await keyService.removeKey(keyPair.publicKey);
+```
+
+### Use with Client
+
+```typescript
+import { createClient } from 'near-api-ts';
+import { createIdbKeyService } from 'near-api-ts/browser';
+
+const keyService = createIdbKeyService();
+
+const client = createClient({
+  network: 'testnet',
+  keyService
+});
+
+// Client can now sign transactions automatically using stored keys
+const result = await client.sendTransaction({
+  signerAccountId: 'sender.testnet',
+  signerPublicKey: storedPublicKey,
+  receiverAccountId: 'receiver.testnet',
+  actions: [/* ... */]
+});
+```
+
+### React Hook Example
+
+```typescript
+import { createIdbKeyService } from 'near-api-ts/browser';
+import { useEffect, useState } from 'react';
+
+function useKeyService() {
+  const [keyService, setKeyService] = useState(null);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    const service = createIdbKeyService({
+      idbName: 'my-near-app'
+    });
+    setKeyService(service);
+    setLoading(false);
+  }, []);
+
+  return { keyService, loading };
+}
+
+// Usage in component
+function MyComponent() {
+  const { keyService, loading } = useKeyService();
+  
+  if (loading) return <div>Loading...</div>;
+  
+  const handleSignTransaction = async () => {
+    const result = await keyService.signTransaction({
+      transaction: /* ... */
+    });
+    console.log('Signed:', result);
+  };
+  
+  return <button onClick={handleSignTransaction}>Sign Transaction</button>;
+}
+```
+
+## IndexedDB Storage Structure
+
+Keys are stored in IndexedDB with the following structure:
+
+```
+Database: near-api-ts (or custom name)
+  Object Store: keys
+    Key: publicKey (string)
+    Value: {
+      publicKey: string,
+      privateKey: string,
+      keyType: 'ed25519' | 'secp256k1'
+    }
+```
+
+## Error Types
+
+### Creation Errors
+
+- `CreateIdbKeyService.Internal` - Internal error during creation
+
+### Sign Transaction Errors
+
+- `IdbKeyService.SignTransaction.Args.InvalidSchema` - Invalid transaction arguments
+- `IdbKeyService.SignTransaction.Internal` - Internal signing error
+
+## Security Considerations
+
+<Warning>
+  **Browser Storage Security**
+  
+  - Keys are stored in the browser's IndexedDB, which is accessible to JavaScript running on the same origin
+  - Use HTTPS to prevent man-in-the-middle attacks
+  - Implement Content Security Policy (CSP) to prevent XSS attacks
+  - Consider using browser-based hardware wallet integration for high-value accounts
+</Warning>
+
+### Content Security Policy
+
+```html
+<meta 
+  http-equiv="Content-Security-Policy" 
+  content="default-src 'self'; script-src 'self'; object-src 'none';"
+>
+```
+
+### Secure Context (HTTPS)
+
+```typescript
+// Check if running in secure context
+if (!window.isSecureContext) {
+  console.warn('Not running in secure context (HTTPS). Key storage may be limited.');
+}
+
+const keyService = createIdbKeyService();
+```
+
+## Browser Compatibility
+
+<Note>
+  IndexedDB is supported in all modern browsers:
+  - Chrome 24+
+  - Firefox 16+
+  - Safari 10+
+  - Edge 12+
+</Note>
+
+### Feature Detection
+
+```typescript
+function isIndexedDBSupported(): boolean {
+  return 'indexedDB' in window;
+}
+
+if (isIndexedDBSupported()) {
+  const keyService = createIdbKeyService();
+} else {
+  console.error('IndexedDB not supported in this browser');
+}
+```
+
+## Use Cases
+
+<CardGroup cols={2}>
+  <Card title="Web Applications" icon="browser">
+    Browser-based dApps with persistent key storage
+  </Card>
+  
+  <Card title="Progressive Web Apps" icon="mobile">
+    PWAs that work offline with stored keys
+  </Card>
+  
+  <Card title="Browser Extensions" icon="puzzle-piece">
+    Chrome/Firefox extensions managing NEAR accounts
+  </Card>
+  
+  <Card title="Development" icon="code">
+    Browser-based development tools and playgrounds
+  </Card>
+</CardGroup>
+
+## Best Practices
+
+<AccordionGroup>
+  <Accordion title="User Consent">
+    Always get explicit user consent before storing keys:
+
+    ```typescript
+    async function storeKeyWithConsent(keyPair: KeyPair) {
+      const consent = confirm(
+        'Store this key in your browser for future use? '
+        + 'Keys are stored locally and never sent to our servers.'
+      );
+      
+      if (consent) {
+        await keyService.addKey(keyPair);
+        console.log('Key stored with user consent');
+      }
+    }
+    ```
+  </Accordion>
+
+  <Accordion title="Key Expiration">
+    Implement key expiration for temporary sessions:
+
+    ```typescript
+    interface StoredKey {
+      keyPair: KeyPair;
+      expiresAt: number;
+    }
+
+    async function addTemporaryKey(
+      keyService: IdbKeyService,
+      keyPair: KeyPair,
+      ttlMs: number
+    ) {
+      await keyService.addKey(keyPair);
+      
+      // Schedule removal
+      setTimeout(async () => {
+        await keyService.removeKey(keyPair.publicKey);
+        console.log('Key expired and removed');
+      }, ttlMs);
+    }
+    ```
+  </Accordion>
+
+  <Accordion title="Clear on Logout">
+    Clear keys when user logs out:
+
+    ```typescript
+    async function logout(keyService: IdbKeyService) {
+      // Clear all stored keys
+      await keyService.clear();
+      
+      // Clear other session data
+      localStorage.clear();
+      sessionStorage.clear();
+      
+      console.log('Logged out and keys cleared');
+    }
+    ```
+  </Accordion>
+
+  <Accordion title="Multiple Accounts">
+    Support multiple accounts with different databases:
+
+    ```typescript
+    function createUserKeyService(userId: string) {
+      return createIdbKeyService({
+        idbName: `near-keys-${userId}`
+      });
+    }
+
+    // Different key services for different users
+    const aliceKeys = createUserKeyService('alice');
+    const bobKeys = createUserKeyService('bob');
+    ```
+  </Accordion>
+</AccordionGroup>
+
+## Migration from near-api-js
+
+If you're migrating from `near-api-js`, the IDB Key Service is similar to `BrowserLocalStorageKeyStore`:
+
+```typescript
+// near-api-js (old)
+import { keyStores } from 'near-api-js';
+const keyStore = new keyStores.BrowserLocalStorageKeyStore();
+
+// near-api-ts (new)
+import { createIdbKeyService } from 'near-api-ts/browser';
+const keyService = createIdbKeyService();
+```
+
+<Note>
+  The new IDB Key Service uses IndexedDB instead of localStorage, providing better performance and larger storage capacity.
+</Note>
+
+## Debugging
+
+### Inspect Keys in DevTools
+
+1. Open browser DevTools (F12)
+2. Go to **Application** tab
+3. Expand **IndexedDB**
+4. Find your database (e.g., `near-api-ts`)
+5. Click on **keys** object store
+
+### Export Keys for Backup
+
+```typescript
+async function exportKeys(keyService: IdbKeyService): Promise<string> {
+  // Note: This is a simplified example
+  // Actual implementation would need to access IndexedDB directly
+  console.warn('Export functionality needs custom implementation');
+  return '';
+}
+```
+
+## Source Code
+
+- Implementation: `browser/src/idbKeyService/idbKeyService.ts:23`
+- Type definitions: `browser/types/idbKeyService/idbKeyService.ts:1`
+- IDB connection: `browser/src/idbKeyService/private/openIdbConnection.ts:1`
+
+## Related
+
+- [Memory Key Service](/api/key-services/memory-key-service) - In-memory key storage
+- [File Key Service](/api/key-services/file-key-service) - Node.js file-based storage
+- [Key Pairs](/api/crypto/key-pairs) - Working with cryptographic keys

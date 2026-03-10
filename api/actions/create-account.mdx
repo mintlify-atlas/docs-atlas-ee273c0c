@@ -1,0 +1,365 @@
+---
+title: 'createAccount'
+description: 'Create a new NEAR account'
+---
+
+## Overview
+
+The `createAccount` action creates a new NEAR account. This action must be combined with other actions to be useful, as a new account needs tokens and an access key to be functional.
+
+## Signature
+
+```typescript
+createAccount(): CreateAccountAction
+```
+
+## Parameters
+
+No parameters required.
+
+## Returns
+
+A `CreateAccountAction` object:
+
+```typescript
+{
+  actionType: 'CreateAccount'
+}
+```
+
+## Basic Example
+
+```typescript
+import { 
+  createAccount,
+  transfer,
+  addFullAccessKey,
+  near,
+  randomEd25519KeyPair
+} from '@near-api-ts/universal';
+
+const newKeyPair = randomEd25519KeyPair();
+
+await signer.executeTransaction({
+  intent: {
+    receiverAccountId: 'sub.alice.near',
+    actions: [
+      createAccount(),
+      transfer({ amount: near('10') }),
+      addFullAccessKey({ publicKey: newKeyPair.publicKey })
+    ]
+  }
+});
+
+console.log('Account created successfully');
+console.log('New account private key:', newKeyPair.secretKey);
+```
+
+<Note>
+`createAccount()` must always be used with:
+1. A `transfer()` action to fund the account
+2. An `addFullAccessKey()` or `addFunctionCallKey()` action to give the account access keys
+</Note>
+
+## Subaccount Creation
+
+Create a subaccount of the signer's account:
+
+```typescript
+import { 
+  createAccount,
+  transfer,
+  addFullAccessKey,
+  near,
+  randomEd25519KeyPair
+} from '@near-api-ts/universal';
+
+const newKeyPair = randomEd25519KeyPair();
+
+await signer.executeTransaction({
+  intent: {
+    receiverAccountId: 'app.alice.near', // subaccount of alice.near
+    actions: [
+      createAccount(),
+      transfer({ amount: near('5') }),
+      addFullAccessKey({ publicKey: newKeyPair.publicKey })
+    ]
+  }
+});
+```
+
+<Info>
+Only the parent account can create subaccounts. For example, only `alice.near` can create `*.alice.near` accounts.
+</Info>
+
+## Create and Deploy Contract
+
+```typescript
+import { 
+  createAccount,
+  transfer,
+  deployContract,
+  addFullAccessKey,
+  near,
+  randomEd25519KeyPair
+} from '@near-api-ts/universal';
+import { readFile } from 'fs/promises';
+
+const wasmBytes = await readFile('./contract.wasm');
+const newKeyPair = randomEd25519KeyPair();
+
+await signer.executeTransaction({
+  intent: {
+    receiverAccountId: 'contract.alice.near',
+    actions: [
+      createAccount(),
+      transfer({ amount: near('10') }),
+      addFullAccessKey({ publicKey: newKeyPair.publicKey }),
+      deployContract({ wasmBytes })
+    ]
+  }
+});
+```
+
+## Create with Function Call Key
+
+Create an account with limited permissions:
+
+```typescript
+import { 
+  createAccount,
+  transfer,
+  addFunctionCallKey,
+  near,
+  randomEd25519KeyPair
+} from '@near-api-ts/universal';
+
+const newKeyPair = randomEd25519KeyPair();
+
+await signer.executeTransaction({
+  intent: {
+    receiverAccountId: 'limited.alice.near',
+    actions: [
+      createAccount(),
+      transfer({ amount: near('5') }),
+      addFunctionCallKey({
+        publicKey: newKeyPair.publicKey,
+        contractAccountId: 'app.near',
+        allowedFunctions: ['claim_reward', 'vote'],
+        gasBudget: near('0.25')
+      })
+    ]
+  }
+});
+```
+
+## Create Multiple Accounts
+
+Create several accounts in sequence:
+
+```typescript
+import { 
+  createAccount,
+  transfer,
+  addFullAccessKey,
+  near,
+  randomEd25519KeyPair
+} from '@near-api-ts/universal';
+
+const accounts = ['app', 'api', 'storage'];
+
+for (const name of accounts) {
+  const keyPair = randomEd25519KeyPair();
+  
+  await signer.executeTransaction({
+    intent: {
+      receiverAccountId: `${name}.alice.near`,
+      actions: [
+        createAccount(),
+        transfer({ amount: near('5') }),
+        addFullAccessKey({ publicKey: keyPair.publicKey })
+      ]
+    }
+  });
+  
+  console.log(`Created ${name}.alice.near`);
+  console.log(`Private key: ${keyPair.secretKey}`);
+}
+```
+
+## Minimum Balance Requirements
+
+```typescript
+import { near } from '@near-api-ts/universal';
+
+// Minimum for account creation (varies by network)
+const MAINNET_MIN = near('0.001');
+const TESTNET_MIN = near('0.001');
+
+// Recommended initial balance
+const RECOMMENDED = near('1');
+
+// For contract accounts (need more for storage)
+const CONTRACT_MIN = near('5');
+```
+
+<Warning>
+If you don't transfer enough NEAR during account creation, the transaction will fail. The minimum is typically around 0.001 NEAR, but more is recommended.
+</Warning>
+
+## Named Account Creation
+
+Create top-level named accounts (requires special permissions):
+
+```typescript
+// This only works if you have permission to create top-level accounts
+// (e.g., via registrar contract)
+await signer.executeTransaction({
+  intent: {
+    receiverAccountId: 'newuser.near',
+    actions: [
+      createAccount(),
+      transfer({ amount: near('10') }),
+      addFullAccessKey({ publicKey: newKeyPair.publicKey })
+    ]
+  }
+});
+```
+
+<Note>
+Creating top-level `.near` accounts requires going through a registrar contract. Most applications create subaccounts instead.
+</Note>
+
+## Implicit Account Creation
+
+Create an implicit account (based on public key):
+
+```typescript
+import { 
+  transfer,
+  near,
+  randomEd25519KeyPair
+} from '@near-api-ts/universal';
+
+const newKeyPair = randomEd25519KeyPair();
+const implicitAccountId = newKeyPair.publicKey.replace('ed25519:', '');
+
+// Implicit accounts are created automatically by sending tokens
+await signer.executeTransaction({
+  intent: {
+    receiverAccountId: implicitAccountId,
+    action: transfer({ amount: near('1') })
+  }
+});
+
+console.log('Implicit account created:', implicitAccountId);
+console.log('Private key:', newKeyPair.secretKey);
+```
+
+<Info>
+Implicit accounts (64 hex characters) are created automatically when you send them tokens. No `createAccount()` action is needed.
+</Info>
+
+## Error Handling
+
+```typescript
+import { 
+  createAccount,
+  transfer,
+  addFullAccessKey,
+  near,
+  randomEd25519KeyPair,
+  isNatError
+} from '@near-api-ts/universal';
+
+try {
+  const newKeyPair = randomEd25519KeyPair();
+  
+  await signer.executeTransaction({
+    intent: {
+      receiverAccountId: 'sub.alice.near',
+      actions: [
+        createAccount(),
+        transfer({ amount: near('10') }),
+        addFullAccessKey({ publicKey: newKeyPair.publicKey })
+      ]
+    }
+  });
+} catch (error) {
+  if (isNatError(error)) {
+    if (error.kind === 'MemorySigner.ExecuteTransaction.Rpc.Transaction.Action.CreateAccount.AlreadyExist') {
+      console.error('Account already exists');
+    } else if (error.kind === 'MemorySigner.ExecuteTransaction.Rpc.Transaction.Signer.Balance.TooLow') {
+      console.error('Insufficient balance to create account');
+    }
+  }
+}
+```
+
+## Safe Variant
+
+```typescript
+const action = createAccount();
+
+const result = await signer.safeExecuteTransaction({
+  intent: {
+    receiverAccountId: 'sub.alice.near',
+    actions: [
+      action,
+      transfer({ amount: near('10') }),
+      addFullAccessKey({ publicKey: newKeyPair.publicKey })
+    ]
+  }
+});
+
+if (result.ok) {
+  console.log('Account created:', result.value.transactionHash);
+} else {
+  console.error('Creation failed:', result.error.kind);
+}
+```
+
+## Common Errors
+
+- `MemorySigner.ExecuteTransaction.Rpc.Transaction.Action.CreateAccount.AlreadyExist` - Account already exists
+- `MemorySigner.ExecuteTransaction.Rpc.Transaction.Signer.Balance.TooLow` - Insufficient balance
+- Transaction must include transfer - Account creation requires funding
+- Transaction must include access key - Account needs at least one key
+
+## Best Practices
+
+<Check>
+**DO:**
+- Always include a transfer action with sufficient balance
+- Always add at least one access key
+- Store the new account's private key securely
+- Test account creation on testnet first
+- Use descriptive subaccount names
+- Validate account names before creation
+</Check>
+
+<Warning>
+**DON'T:**
+- Don't create accounts without sufficient funding
+- Don't lose the private key - it can't be recovered
+- Don't create accounts without access keys
+- Don't assume account names are available
+- Don't forget that only parent accounts can create subaccounts
+</Warning>
+
+## Account Name Rules
+
+- Minimum length: 2 characters
+- Maximum length: 64 characters
+- Allowed characters: `a-z`, `0-9`, `-`, `_`, `.`
+- Must not start or end with `.`
+- Must not have consecutive `.` characters
+- Subaccounts use format: `sub.parent.near`
+
+## See Also
+
+- [executeTransaction](/api/signers/execute-transaction) - Execute transactions
+- [transfer](/api/actions/transfer) - Fund accounts
+- [addFullAccessKey](/api/actions/add-key) - Add full access keys
+- [addFunctionCallKey](/api/actions/add-key) - Add limited access keys
+- [deleteAccount](/api/actions/delete-account) - Delete accounts

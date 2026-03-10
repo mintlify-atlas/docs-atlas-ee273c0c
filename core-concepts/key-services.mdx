@@ -1,0 +1,396 @@
+---
+title: "Key Services"
+description: "Understand Key Services for managing cryptographic keys and signing operations"
+---
+
+## Overview
+
+A `KeyService` is responsible for managing cryptographic key pairs and performing signing operations. It acts as a secure abstraction layer between your application logic and the actual private keys.
+
+## MemoryKeyService
+
+The `MemoryKeyService` is the default implementation that stores key pairs in memory. It's suitable for server-side applications, CLI tools, and testing.
+
+### Type Definition
+
+```typescript
+type MemoryKeyService = {
+  // Throwable variants
+  signTransaction: SignTransaction;
+  findKeyPair: FindKeyPair;
+  
+  // Safe variants
+  safeSignTransaction: SafeSignTransaction;
+  safeFindKeyPair: SafeFindKeyPair;
+};
+```
+
+### Internal Context
+
+```typescript
+type MemoryKeyServiceContext = {
+  keyPairs: Record<PublicKey, KeyPair>;  // Map of public keys to key pairs
+  safeFindKeyPair: SafeFindKeyPair;      // Safe key lookup function
+};
+```
+
+## Creating a MemoryKeyService
+
+### Single Key Source
+
+```typescript
+import { createMemoryKeyService } from '@near-api/client';
+
+const keyService = createMemoryKeyService({
+  keySource: {
+    privateKey: 'ed25519:3D4YudUahN1...'
+  }
+});
+```
+
+### Multiple Key Sources
+
+```typescript
+const keyService = createMemoryKeyService({
+  keySources: [
+    { privateKey: 'ed25519:3D4YudUahN1...' },
+    { privateKey: 'ed25519:5B2KvwRnG2...' },
+    { privateKey: 'secp256k1:4F8HxmPqR3...' }
+  ]
+});
+```
+
+<Note>
+The service automatically derives the public key from each private key and indexes them for fast lookup.
+</Note>
+
+### Safe Creation
+
+```typescript
+import { safeCreateMemoryKeyService } from '@near-api/client';
+
+const result = safeCreateMemoryKeyService({
+  keySources: [
+    { privateKey: 'ed25519:...' }
+  ]
+});
+
+if (result.ok) {
+  const keyService = result.value;
+} else {
+  console.error(result.error.kind);
+  // 'CreateMemoryKeyService.Args.InvalidSchema'
+  // 'CreateMemoryKeyService.Internal'
+}
+```
+
+## Key Service Methods
+
+### signTransaction
+
+Sign a transaction with the appropriate private key:
+
+```typescript
+const signedTx = await keyService.signTransaction({
+  transaction: {
+    signerAccountId: 'alice.near',
+    signerPublicKey: 'ed25519:...',
+    receiverAccountId: 'bob.near',
+    nonce: 12345,
+    blockHash: '...',
+    actions: [transferAction]
+  }
+});
+
+console.log(signedTx.signature);
+console.log(signedTx.transactionHash);
+```
+
+<Tabs>
+  <Tab title="Throwable">
+    ```typescript
+    try {
+      const signed = await keyService.signTransaction({
+        transaction: myTransaction
+      });
+      // Use signed transaction
+    } catch (error) {
+      // Handle error
+    }
+    ```
+  </Tab>
+
+  <Tab title="Safe">
+    ```typescript
+    const result = await keyService.safeSignTransaction({
+      transaction: myTransaction
+    });
+
+    if (!result.ok) {
+      switch (result.error.kind) {
+        case 'MemoryKeyService.SignTransaction.SigningKeyPair.NotFound':
+          console.log('No private key for:', result.error.context.signerPublicKey);
+          break;
+        case 'MemoryKeyService.SignTransaction.Args.InvalidSchema':
+          console.log('Invalid transaction schema');
+          break;
+      }
+    }
+    ```
+  </Tab>
+</Tabs>
+
+### findKeyPair
+
+Look up a key pair by its public key:
+
+```typescript
+const keyPair = await keyService.findKeyPair({
+  publicKey: 'ed25519:...'
+});
+
+console.log(keyPair.publicKey);
+console.log(keyPair.privateKey);
+```
+
+**Safe variant:**
+
+```typescript
+const result = await keyService.safeFindKeyPair({
+  publicKey: 'ed25519:...'
+});
+
+if (result.ok) {
+  const keyPair = result.value;
+} else {
+  // 'MemoryKeyService.FindKeyPair.NotFound'
+  console.log('Key not found:', result.error.context.publicKey);
+}
+```
+
+## Key Pair Management
+
+### Generating Key Pairs
+
+The library provides utilities to generate new key pairs:
+
+```typescript
+import { randomEd25519KeyPair, randomSecp256k1KeyPair } from '@near-api/client';
+
+// Generate Ed25519 key pair (recommended)
+const ed25519KeyPair = randomEd25519KeyPair();
+console.log(ed25519KeyPair.publicKey);   // "ed25519:..."
+console.log(ed25519KeyPair.privateKey);  // "ed25519:..."
+
+// Generate Secp256k1 key pair
+const secp256k1KeyPair = randomSecp256k1KeyPair();
+```
+
+### Creating Key Pairs from Existing Keys
+
+```typescript
+import { keyPair } from '@near-api/client';
+
+const kp = keyPair({
+  curve: 'ed25519',
+  privateKey: 'ed25519:3D4YudUahN1...'
+});
+```
+
+**Safe variant:**
+
+```typescript
+import { safeKeyPair } from '@near-api/client';
+
+const result = safeKeyPair({
+  curve: 'ed25519',
+  privateKey: 'ed25519:...'
+});
+
+if (!result.ok) {
+  // 'CreateKeyPair.Args.InvalidSchema'
+  // 'CreateKeyPair.Internal'
+}
+```
+
+## KeyPair Type
+
+```typescript
+type KeyPair = {
+  publicKey: PublicKey;   // "ed25519:..." or "secp256k1:..."
+  privateKey: PrivateKey; // "ed25519:..." or "secp256k1:..."
+  curve: 'ed25519' | 'secp256k1';
+};
+```
+
+## Supported Curves
+
+The NEAR API TypeScript library supports two elliptic curves:
+
+<Card title="Ed25519" icon="shield">
+**Recommended for most use cases**
+
+- Default choice for NEAR
+- Faster signing and verification
+- Smaller signatures (64 bytes)
+- Better security properties
+</Card>
+
+<Card title="Secp256k1" icon="key">
+**For Bitcoin/Ethereum compatibility**
+
+- Used in Bitcoin and Ethereum
+- Larger signatures
+- Required for cross-chain applications
+</Card>
+
+## Error Handling
+
+The MemoryKeyService can produce the following errors:
+
+<Accordion title="Error Registry">
+```typescript
+interface MemoryKeyServicePublicErrorRegistry {
+  'CreateMemoryKeyService.Args.InvalidSchema': InvalidSchemaErrorContext;
+  'CreateMemoryKeyService.Internal': InternalErrorContext;
+  
+  'MemoryKeyService.SignTransaction.Args.InvalidSchema': InvalidSchemaErrorContext;
+  'MemoryKeyService.SignTransaction.SigningKeyPair.NotFound': {
+    signerPublicKey: PublicKey;
+  };
+  'MemoryKeyService.SignTransaction.Internal': InternalErrorContext;
+  
+  'MemoryKeyService.FindKeyPair.Args.InvalidSchema': InvalidSchemaErrorContext;
+  'MemoryKeyService.FindKeyPair.NotFound': { 
+    publicKey: PublicKey 
+  };
+  'MemoryKeyService.FindKeyPair.Internal': InternalErrorContext;
+}
+```
+</Accordion>
+
+### Common Error Scenarios
+
+<Tabs>
+  <Tab title="Key Not Found">
+    ```typescript
+    const result = await keyService.safeSignTransaction({
+      transaction: {
+        signerPublicKey: 'ed25519:WrongKey...',
+        // ... other fields
+      }
+    });
+
+    if (!result.ok && 
+        result.error.kind === 'MemoryKeyService.SignTransaction.SigningKeyPair.NotFound') {
+      console.log('The keyService does not have this key:', 
+                  result.error.context.signerPublicKey);
+      // Add the key to the service or use a different public key
+    }
+    ```
+  </Tab>
+
+  <Tab title="Invalid Private Key">
+    ```typescript
+    const result = safeCreateMemoryKeyService({
+      keySource: {
+        privateKey: 'invalid-key-format'
+      }
+    });
+
+    if (!result.ok && 
+        result.error.kind === 'CreateMemoryKeyService.Args.InvalidSchema') {
+      console.log('Private key validation failed');
+      console.log(result.error.context.zodError);
+    }
+    ```
+  </Tab>
+</Tabs>
+
+## Integration with Signers
+
+KeyServices are primarily used by Signers to perform cryptographic operations:
+
+```typescript
+import { createClient, createMemoryKeyService, createMemorySigner } from '@near-api/client';
+
+// 1. Create client
+const client = createClient({
+  transport: {
+    rpcEndpoints: {
+      archival: [{ url: 'https://rpc.testnet.near.org' }]
+    }
+  }
+});
+
+// 2. Create key service with your keys
+const keyService = createMemoryKeyService({
+  keySources: [
+    { privateKey: 'ed25519:...' }
+  ]
+});
+
+// 3. Create signer that uses the key service
+const signer = createMemorySigner({
+  signerAccountId: 'alice.near',
+  client,
+  keyService
+});
+
+// Now the signer will use keyService to sign transactions
+await signer.executeTransaction({
+  intent: {
+    receiverAccountId: 'bob.near',
+    action: transferAction
+  }
+});
+```
+
+## Security Considerations
+
+<Card title="Memory Storage" icon="exclamation-triangle">
+`MemoryKeyService` stores keys in memory, which means:
+- Keys are lost when the process terminates
+- Keys are vulnerable if the process memory is compromised
+- Not suitable for long-term key storage in production web applications
+</Card>
+
+<Card title="Best Practices" icon="check-circle">
+- **Server-side**: Use MemoryKeyService with keys loaded from secure storage
+- **Client-side**: Consider implementing a custom KeyService that integrates with browser wallet extensions
+- **Testing**: MemoryKeyService is perfect for unit tests and integration tests
+- **Key rotation**: Regularly rotate keys and use function call keys when possible
+</Card>
+
+## Custom Key Services
+
+You can implement your own KeyService to integrate with hardware wallets, KMS, or browser wallets:
+
+```typescript
+interface CustomKeyService {
+  signTransaction: (args: { transaction: Transaction }) => Promise<SignedTransaction>;
+  safeSignTransaction: (args: { transaction: Transaction }) => Promise<Result<SignedTransaction, Error>>;
+  findKeyPair: (args: { publicKey: PublicKey }) => Promise<KeyPair>;
+  safeFindKeyPair: (args: { publicKey: PublicKey }) => Promise<Result<KeyPair, Error>>;
+}
+
+const customKeyService: CustomKeyService = {
+  signTransaction: async ({ transaction }) => {
+    // Integrate with your hardware wallet or KMS
+    const signature = await myHardwareWallet.sign(transaction);
+    return {
+      transaction,
+      signature,
+      transactionHash: computeHash(transaction)
+    };
+  },
+  // ... implement other methods
+};
+```
+
+## Related Concepts
+
+- [Clients](/core-concepts/clients) - RPC client for NEAR network
+- [Signers](/core-concepts/signers) - High-level transaction signing and execution
+- [Transactions](/core-concepts/transactions) - Transaction structure and signing
+- [Error Handling](/core-concepts/error-handling) - NatError system

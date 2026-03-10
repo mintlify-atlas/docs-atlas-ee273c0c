@@ -1,0 +1,605 @@
+---
+title: Tokens and Gas
+description: Understanding NEAR tokens, gas mechanics, and transaction costs
+---
+
+This guide explains how NEAR tokens work, how to calculate gas costs, and best practices for managing transaction fees.
+
+## NEAR Token Basics
+
+### Token Denominations
+
+NEAR has two primary units:
+
+- **NEAR**: Human-readable unit (e.g., 1 NEAR, 5.5 NEAR)
+- **yoctoNEAR**: Smallest unit, 1 NEAR = 10²⁴ yoctoNEAR
+
+The name "yoctoNEAR" comes from "yocto", the SI prefix for 10⁻²⁴.
+
+### Creating Token Amounts
+
+```typescript
+import { near, yoctoNear, nearToken } from 'near-api-ts';
+
+// Create from NEAR
+const amount1 = near('5');  // 5 NEAR
+const amount2 = near('10.5');  // 10.5 NEAR
+
+// Create from yoctoNEAR
+const amount3 = yoctoNear('1000000000000000000000000');  // 1 NEAR
+
+// Create using object syntax
+const amount4 = nearToken({ near: '2.5' });
+const amount5 = nearToken({ yoctoNear: '5000000' });
+
+// Access values
+console.log('NEAR:', amount1.near);  // 5
+console.log('YoctoNEAR:', amount1.yoctoNear);  // 5000000000000000000000000
+```
+
+### Token Arithmetic
+
+The `NearToken` type supports mathematical operations:
+
+```typescript
+import { near } from 'near-api-ts';
+
+const balance = near('100');
+const payment = near('25');
+
+// Addition
+const total = balance.add(payment);  // 125 NEAR
+console.log('Total:', total.near);
+
+// Subtraction
+const remaining = balance.sub(payment);  // 75 NEAR
+console.log('Remaining:', remaining.near);
+
+// Comparisons
+if (balance.gt(payment)) {
+  console.log('Balance is greater than payment');
+}
+
+if (payment.lt(balance)) {
+  console.log('Payment is less than balance');
+}
+
+// Chain operations
+const result = near('100')
+  .add(near('50'))
+  .sub(near('25'));
+console.log('Result:', result.near);  // 125
+```
+
+### Safe Token Operations
+
+Use safe variants for error handling:
+
+```typescript
+import { near, isNatError } from 'near-api-ts';
+
+const amount1 = near('10');
+const amount2 = near('5');
+
+// Safe addition
+const addResult = amount1.safeAdd(amount2);
+if (addResult.ok) {
+  console.log('Sum:', addResult.value.near);
+} else {
+  console.error('Addition failed:', addResult.error);
+}
+
+// Safe subtraction
+const subResult = amount1.safeSub(amount2);
+if (subResult.ok) {
+  console.log('Difference:', subResult.value.near);
+}
+
+// Safe comparison
+const gtResult = amount1.safeGt(amount2);
+if (gtResult.ok) {
+  console.log('Is greater:', gtResult.value);
+}
+```
+
+## Gas Mechanics
+
+### Understanding Gas
+
+Gas is the unit that measures computational work on NEAR. Every operation consumes gas:
+
+- Storage operations
+- Computation
+- Network bandwidth
+
+Gas is paid for with NEAR tokens at the current gas price.
+
+### Gas Units
+
+Gas can be specified in two units:
+
+- **Gas**: Base unit (very large numbers)
+- **TGas** (TeraGas): 1 TGas = 10¹² gas units
+
+```typescript
+import { gas, teraGas } from 'near-api-ts';
+
+// Using TGas (recommended)
+const gasLimit1 = teraGas('30');  // 30 TGas
+const gasLimit2 = teraGas('100');  // 100 TGas
+
+// Using raw gas units
+const gasLimit3 = gas('30000000000000');  // 30 TGas
+
+// Access values
+console.log('TGas:', gasLimit1.teraGas);  // 30
+console.log('Gas:', gasLimit1.gas);  // 30000000000000
+```
+
+### Gas Arithmetic
+
+```typescript
+import { teraGas } from 'near-api-ts';
+
+const baseGas = teraGas('30');
+const extraGas = teraGas('20');
+
+// Addition
+const totalGas = baseGas.add(extraGas);  // 50 TGas
+
+// Subtraction
+const remaining = baseGas.sub(teraGas('10'));  // 20 TGas
+
+// Comparisons
+if (totalGas.gt(baseGas)) {
+  console.log('Total is greater');
+}
+```
+
+### Gas Limits by Operation
+
+Different operations require different amounts of gas:
+
+```typescript
+import { teraGas, functionCall } from 'near-api-ts';
+
+// Simple storage operations: 30-50 TGas
+const simpleCall = functionCall({
+  functionName: 'set_value',
+  functionArgs: { value: 42 },
+  gasLimit: teraGas('30')
+});
+
+// Complex computations: 50-100 TGas
+const complexCall = functionCall({
+  functionName: 'process_data',
+  functionArgs: { data: [...] },
+  gasLimit: teraGas('100')
+});
+
+// Cross-contract calls: 150-300 TGas
+const crossContractCall = functionCall({
+  functionName: 'call_other_contract',
+  functionArgs: { target: 'other.testnet' },
+  gasLimit: teraGas('200')
+});
+```
+
+## Transaction Costs
+
+### Cost Components
+
+A transaction's cost includes:
+
+1. **Gas fees**: Cost of computation (gas used × gas price)
+2. **Storage fees**: Cost of storing data on chain
+3. **Transfer amount**: NEAR tokens being transferred (if any)
+
+### Calculating Transaction Costs
+
+```typescript
+import { createTestnetClient, createMemorySigner, transfer, near } from 'near-api-ts';
+
+const client = createTestnetClient();
+const signer = createMemorySigner({
+  signerAccountId: 'sender.testnet',
+  client,
+  keyService: /* ... */
+});
+
+// Execute transaction and check costs
+const result = await signer.executeTransaction({
+  intent: {
+    action: transfer({ amount: near('1') }),
+    receiverAccountId: 'receiver.testnet'
+  }
+});
+
+// Gas burned
+const gasBurnt = result.transactionOutcome.outcome.gasBurnt;
+console.log('Gas burned:', gasBurnt);
+
+// Tokens burned (gas cost)
+const tokensBurnt = result.transactionOutcome.outcome.tokensBurnt;
+console.log('Cost in yoctoNEAR:', tokensBurnt);
+
+// Convert to NEAR for readability
+const costInNear = yoctoNear(tokensBurnt);
+console.log('Cost in NEAR:', costInNear.near);
+```
+
+### Storage Costs
+
+Storing data costs 0.0001 NEAR per byte:
+
+```typescript
+import { near } from 'near-api-ts';
+
+// Calculate storage cost
+function calculateStorageCost(bytes: number): NearToken {
+  // 100,000,000,000,000,000,000 yoctoNEAR per byte
+  const costPerByte = 100000000000000000000n;
+  const totalCost = BigInt(bytes) * costPerByte;
+  return yoctoNear(totalCost.toString());
+}
+
+// Example: 1 KB of storage
+const storageCost = calculateStorageCost(1024);
+console.log('Cost for 1KB:', storageCost.near, 'NEAR');
+// Output: 0.0001024 NEAR
+
+// Typical storage deposit for FT registration: ~0.00125 NEAR
+const ftRegistrationCost = near('0.00125');
+```
+
+## Optimizing Gas Usage
+
+### Batch Operations
+
+Combine multiple actions into one transaction to save gas:
+
+```typescript
+import { functionCall, teraGas } from 'near-api-ts';
+
+// Instead of 3 separate transactions:
+// ❌ Expensive
+await signer.executeTransaction({
+  intent: {
+    action: functionCall({ functionName: 'op1', gasLimit: teraGas('30') }),
+    receiverAccountId: 'contract.testnet'
+  }
+});
+await signer.executeTransaction({
+  intent: {
+    action: functionCall({ functionName: 'op2', gasLimit: teraGas('30') }),
+    receiverAccountId: 'contract.testnet'
+  }
+});
+await signer.executeTransaction({
+  intent: {
+    action: functionCall({ functionName: 'op3', gasLimit: teraGas('30') }),
+    receiverAccountId: 'contract.testnet'
+  }
+});
+
+// ✅ Efficient: Single transaction
+await signer.executeTransaction({
+  intent: {
+    actions: [
+      functionCall({ functionName: 'op1', gasLimit: teraGas('30') }),
+      functionCall({ functionName: 'op2', gasLimit: teraGas('30') }),
+      functionCall({ functionName: 'op3', gasLimit: teraGas('30') })
+    ],
+    receiverAccountId: 'contract.testnet'
+  }
+});
+```
+
+### Appropriate Gas Limits
+
+Don't over-allocate gas:
+
+```typescript
+import { teraGas } from 'near-api-ts';
+
+// ❌ Too much gas
+const wastedGas = teraGas('300');  // Unused gas is refunded, but reserves unnecessarily
+
+// ✅ Appropriate amount
+const efficientGas = teraGas('50');  // Enough for the operation
+```
+
+### Minimize Storage
+
+Reduce data stored on-chain:
+
+```typescript
+// ❌ Storing large data
+await signer.executeTransaction({
+  intent: {
+    action: functionCall({
+      functionName: 'store_data',
+      functionArgs: {
+        data: 'very long string...'.repeat(1000)  // Expensive
+      },
+      gasLimit: teraGas('50')
+    }),
+    receiverAccountId: 'contract.testnet'
+  }
+});
+
+// ✅ Store hash, keep data off-chain
+const dataHash = hashData('very long string...');
+await signer.executeTransaction({
+  intent: {
+    action: functionCall({
+      functionName: 'store_hash',
+      functionArgs: { hash: dataHash },  // Cheap
+      gasLimit: teraGas('30')
+    }),
+    receiverAccountId: 'contract.testnet'
+  }
+});
+```
+
+## Complete Example: Cost Calculator
+
+Here's a utility to estimate and track transaction costs:
+
+```typescript
+import {
+  createTestnetClient,
+  createMemoryKeyService,
+  createMemorySigner,
+  transfer,
+  functionCall,
+  near,
+  yoctoNear,
+  teraGas,
+  type NearToken
+} from 'near-api-ts';
+
+interface TransactionCost {
+  gasBurnt: string;
+  tokensBurnt: string;
+  costInNear: number;
+  transferAmount?: number;
+  totalSpent: number;
+}
+
+class CostCalculator {
+  private client;
+  private signer;
+  private history: TransactionCost[] = [];
+  
+  constructor(accountId: string, privateKey: string) {
+    this.client = createTestnetClient();
+    const keyService = createMemoryKeyService({
+      keySource: { privateKey }
+    });
+    this.signer = createMemorySigner({
+      signerAccountId: accountId,
+      client: this.client,
+      keyService
+    });
+  }
+  
+  // Execute and track costs
+  async executeWithCostTracking(
+    action: any,
+    receiverAccountId: string
+  ): Promise<TransactionCost> {
+    const result = await this.signer.executeTransaction({
+      intent: { action, receiverAccountId }
+    });
+    
+    const gasBurnt = result.transactionOutcome.outcome.gasBurnt.toString();
+    const tokensBurnt = result.transactionOutcome.outcome.tokensBurnt.toString();
+    const costToken = yoctoNear(tokensBurnt);
+    
+    // Check if there was a transfer
+    let transferAmount = 0;
+    if (action.actionType === 'Transfer') {
+      transferAmount = action.amount.near;
+    }
+    
+    const cost: TransactionCost = {
+      gasBurnt,
+      tokensBurnt,
+      costInNear: costToken.near,
+      transferAmount: transferAmount > 0 ? transferAmount : undefined,
+      totalSpent: costToken.near + transferAmount
+    };
+    
+    this.history.push(cost);
+    return cost;
+  }
+  
+  // Get cost history
+  getHistory(): TransactionCost[] {
+    return this.history;
+  }
+  
+  // Calculate total spent
+  getTotalSpent(): number {
+    return this.history.reduce((sum, cost) => sum + cost.totalSpent, 0);
+  }
+  
+  // Calculate average gas per transaction
+  getAverageGas(): string {
+    if (this.history.length === 0) return '0';
+    const total = this.history.reduce(
+      (sum, cost) => sum + BigInt(cost.gasBurnt),
+      0n
+    );
+    return (total / BigInt(this.history.length)).toString();
+  }
+  
+  // Estimate storage cost
+  static estimateStorageCost(bytes: number): NearToken {
+    const costPerByte = 100000000000000000000n;  // 0.0001 NEAR
+    const totalCost = BigInt(bytes) * costPerByte;
+    return yoctoNear(totalCost.toString());
+  }
+  
+  // Print summary
+  printSummary() {
+    console.log('\n=== Transaction Cost Summary ===\n');
+    console.log(`Total transactions: ${this.history.length}`);
+    console.log(`Total spent: ${this.getTotalSpent().toFixed(6)} NEAR`);
+    console.log(`Average gas: ${this.getAverageGas()}`);
+    
+    if (this.history.length > 0) {
+      const avgCost = this.getTotalSpent() / this.history.length;
+      console.log(`Average cost per tx: ${avgCost.toFixed(6)} NEAR`);
+    }
+    
+    console.log('\nTransaction History:');
+    this.history.forEach((cost, i) => {
+      console.log(`\nTransaction ${i + 1}:`);
+      console.log(`  Gas burnt: ${cost.gasBurnt}`);
+      console.log(`  Cost: ${cost.costInNear.toFixed(6)} NEAR`);
+      if (cost.transferAmount) {
+        console.log(`  Transfer: ${cost.transferAmount} NEAR`);
+        console.log(`  Total: ${cost.totalSpent.toFixed(6)} NEAR`);
+      }
+    });
+  }
+}
+
+// Usage example
+async function main() {
+  const calculator = new CostCalculator(
+    'myaccount.testnet',
+    'ed25519:your-private-key'
+  );
+  
+  // Track a simple transfer
+  console.log('Executing transfer...');
+  const transferCost = await calculator.executeWithCostTracking(
+    transfer({ amount: near('1') }),
+    'receiver.testnet'
+  );
+  console.log(`Transfer cost: ${transferCost.costInNear.toFixed(6)} NEAR`);
+  
+  // Track a function call
+  console.log('\nExecuting function call...');
+  const callCost = await calculator.executeWithCostTracking(
+    functionCall({
+      functionName: 'set_status',
+      functionArgs: { message: 'Hello!' },
+      gasLimit: teraGas('30')
+    }),
+    'contract.testnet'
+  );
+  console.log(`Function call cost: ${callCost.costInNear.toFixed(6)} NEAR`);
+  
+  // Estimate storage cost
+  const storageFor1KB = CostCalculator.estimateStorageCost(1024);
+  console.log(`\nStorage cost for 1KB: ${storageFor1KB.near} NEAR`);
+  
+  // Print summary
+  calculator.printSummary();
+}
+
+main();
+```
+
+## Best Practices
+
+### Always Check Balance Before Transactions
+
+```typescript
+import { createTestnetClient, near } from 'near-api-ts';
+
+const client = createTestnetClient();
+
+async function canAffordTransaction(
+  accountId: string,
+  amount: NearToken,
+  estimatedGas: NearToken
+): Promise<boolean> {
+  const { accountInfo } = await client.getAccountInfo({
+    accountId,
+    atMomentOf: 'LatestFinalBlock'
+  });
+  
+  const required = amount.add(estimatedGas);
+  return accountInfo.balance.available.gt(required);
+}
+
+const canAfford = await canAffordTransaction(
+  'sender.testnet',
+  near('10'),
+  near('0.001')  // Estimated gas cost
+);
+
+if (!canAfford) {
+  console.log('Insufficient balance');
+}
+```
+
+### Use Appropriate Gas Estimates
+
+```typescript
+import { teraGas } from 'near-api-ts';
+
+// Common gas estimates
+const GAS_FOR_SIMPLE_CALL = teraGas('30');
+const GAS_FOR_COMPLEX_CALL = teraGas('100');
+const GAS_FOR_CROSS_CONTRACT = teraGas('200');
+
+// Add buffer for safety
+const gasWithBuffer = (baseGas: NearGas) => {
+  return baseGas.add(teraGas('10'));
+};
+```
+
+### Monitor Gas Prices
+
+```typescript
+import { createTestnetClient } from 'near-api-ts';
+
+const client = createTestnetClient();
+
+async function getCurrentGasPrice() {
+  const { block } = await client.getBlock({
+    blockReference: 'LatestFinalBlock'
+  });
+  
+  return block.header.gasPrice;
+}
+
+const gasPrice = await getCurrentGasPrice();
+console.log('Current gas price:', gasPrice);
+```
+
+### Track Storage Usage
+
+```typescript
+import { createTestnetClient } from 'near-api-ts';
+
+const client = createTestnetClient();
+
+async function getStorageUsage(accountId: string) {
+  const { accountInfo } = await client.getAccountInfo({
+    accountId,
+    atMomentOf: 'LatestFinalBlock'
+  });
+  
+  console.log('Storage used:', accountInfo.storageUsed, 'bytes');
+  console.log('Storage available:', accountInfo.storageAvailable, 'bytes');
+  
+  // Calculate storage cost
+  const storageCost = accountInfo.balance.stateStaked;
+  console.log('Storage staked:', storageCost.near, 'NEAR');
+}
+
+await getStorageUsage('myaccount.testnet');
+```
+
+## Next Steps
+
+- [Reading Blockchain Data](/guides/reading-blockchain-data) - Query account and contract data
+- [Sending Transactions](/guides/sending-transactions) - Execute transactions efficiently
+- [Managing Keys](/guides/managing-keys) - Secure key management

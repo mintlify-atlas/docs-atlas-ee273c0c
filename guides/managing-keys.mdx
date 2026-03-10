@@ -1,0 +1,675 @@
+---
+title: Managing Keys
+description: Learn how to generate, store, and use cryptographic keys for NEAR accounts
+---
+
+This guide covers key management in NEAR, including generating key pairs, storing them securely, and using them to sign transactions.
+
+## Understanding NEAR Keys
+
+NEAR uses public-key cryptography for account security. Each key pair consists of:
+
+- **Private Key**: Secret key used to sign transactions (must be kept secure)
+- **Public Key**: Publicly shared key that identifies your access to an account
+
+NEAR supports two curve types:
+- **ED25519**: Default, faster, smaller signatures
+- **Secp256k1**: Bitcoin/Ethereum compatible
+
+## Key Format
+
+Keys in NEAR use the format `curve:base58-encoded-bytes`:
+
+```typescript
+// ED25519 key (64 bytes total)
+"ed25519:2QFAojSP46PX5mVvFGLGfHBjYgqykNjrP8gBTUkw3gMnPVy8NAFxQHZ3BUcTY5SAQ3yiHDsYtHQUMQXdPfTkqVT4"
+
+// Secp256k1 key (32 bytes)
+"secp256k1:4gP8XVBNKhYQvR3EZBLoQz5FWMewqJdKsvWtEBqjW7JE"
+```
+
+## Generating Key Pairs
+
+### Generate ED25519 Keys
+
+The default and recommended curve:
+
+```typescript
+import { randomEd25519KeyPair } from 'near-api-ts';
+
+// Generate a new ED25519 key pair
+const keyPair = randomEd25519KeyPair();
+
+console.log('Public Key:', keyPair.publicKey);
+console.log('Private Key:', keyPair.privateKey);
+
+// Sign a message
+const message = new TextEncoder().encode('Hello, NEAR!');
+const signature = keyPair.sign(message);
+console.log('Signature:', signature);
+```
+
+### Generate Secp256k1 Keys
+
+Useful for Bitcoin/Ethereum compatibility:
+
+```typescript
+import { randomSecp256k1KeyPair } from 'near-api-ts';
+
+// Generate a new Secp256k1 key pair
+const keyPair = randomSecp256k1KeyPair();
+
+console.log('Public Key:', keyPair.publicKey);
+console.log('Private Key:', keyPair.privateKey);
+```
+
+### Create Key Pair from Private Key
+
+```typescript
+import { keyPair } from 'near-api-ts';
+
+// Create from existing private key
+const existingKey = keyPair(
+  'ed25519:your-private-key-here'
+);
+
+console.log('Public Key:', existingKey.publicKey);
+
+// Sign with the key
+const message = new TextEncoder().encode('Sign this');
+const signature = existingKey.sign(message);
+```
+
+## Key Storage
+
+### Memory Key Service
+
+Store keys in memory (suitable for short-lived processes):
+
+```typescript
+import { createMemoryKeyService, randomEd25519KeyPair } from 'near-api-ts';
+
+// Create with a single key
+const keyService = createMemoryKeyService({
+  keySource: {
+    privateKey: 'ed25519:your-private-key'
+  }
+});
+
+// Or create with generated key
+const newKey = randomEd25519KeyPair();
+const keyService2 = createMemoryKeyService({
+  keySource: {
+    privateKey: newKey.privateKey
+  }
+});
+```
+
+### File-Based Key Storage (Node.js)
+
+Store keys in the filesystem:
+
+```typescript
+import { createFileKeyService } from 'near-api-ts/node';
+import { randomEd25519KeyPair } from 'near-api-ts';
+import { writeFile } from 'fs/promises';
+import { homedir } from 'os';
+import { join } from 'path';
+
+// Generate and save a key
+const keyPair = randomEd25519KeyPair();
+const keyDir = join(homedir(), '.near-credentials', 'testnet');
+const keyPath = join(keyDir, 'myaccount.testnet.json');
+
+await writeFile(keyPath, JSON.stringify({
+  account_id: 'myaccount.testnet',
+  public_key: keyPair.publicKey,
+  private_key: keyPair.privateKey
+}));
+
+// Load keys from file
+const fileKeyService = createFileKeyService({
+  keysPath: join(homedir(), '.near-credentials', 'testnet')
+});
+```
+
+### Browser Key Storage (IndexedDB)
+
+Store keys securely in the browser:
+
+```typescript
+import { createIdbKeyService } from 'near-api-ts/browser';
+import { randomEd25519KeyPair } from 'near-api-ts';
+
+// Create browser key service
+const keyService = await createIdbKeyService({
+  dbName: 'near-keys-db'
+});
+
+// Add a key
+const keyPair = randomEd25519KeyPair();
+await keyService.addKey({
+  accountId: 'user.testnet',
+  publicKey: keyPair.publicKey,
+  privateKey: keyPair.privateKey
+});
+
+// Check if key exists
+const hasKey = await keyService.hasKey({
+  accountId: 'user.testnet',
+  publicKey: keyPair.publicKey
+});
+
+// Remove a key
+await keyService.removeKey({
+  accountId: 'user.testnet',
+  publicKey: keyPair.publicKey
+});
+```
+
+## Access Keys
+
+### Full Access Keys
+
+Grant complete control over an account:
+
+```typescript
+import { 
+  createTestnetClient,
+  createMemoryKeyService,
+  createMemorySigner,
+  addFullAccessKey,
+  randomEd25519KeyPair,
+  teraGas
+} from 'near-api-ts';
+
+const client = createTestnetClient();
+const keyService = createMemoryKeyService({
+  keySource: { privateKey: 'ed25519:existing-key' }
+});
+const signer = createMemorySigner({
+  signerAccountId: 'myaccount.testnet',
+  client,
+  keyService
+});
+
+// Generate new key to add
+const newKey = randomEd25519KeyPair();
+
+// Add full access key
+await signer.executeTransaction({
+  intent: {
+    action: addFullAccessKey({ publicKey: newKey.publicKey }),
+    receiverAccountId: 'myaccount.testnet'
+  }
+});
+
+console.log('New full access key added:', newKey.publicKey);
+console.log('Private key (save securely):', newKey.privateKey);
+```
+
+### Function Call Keys
+
+Grant limited access to specific contract methods:
+
+```typescript
+import { addFunctionCallKey, near, randomEd25519KeyPair } from 'near-api-ts';
+
+// Generate limited access key
+const limitedKey = randomEd25519KeyPair();
+
+// Add function call key with restrictions
+await signer.executeTransaction({
+  intent: {
+    action: addFunctionCallKey({
+      publicKey: limitedKey.publicKey,
+      allowance: near('0.25'),  // Maximum 0.25 NEAR can be spent
+      receiverId: 'contract.testnet',  // Only this contract
+      methodNames: ['increment', 'decrement']  // Only these methods
+    }),
+    receiverAccountId: 'myaccount.testnet'
+  }
+});
+
+console.log('Limited access key added');
+console.log('Can only call increment/decrement on contract.testnet');
+```
+
+### Query Access Keys
+
+Check what keys an account has:
+
+```typescript
+import { createTestnetClient } from 'near-api-ts';
+
+const client = createTestnetClient();
+
+// Get all keys for an account
+const { accountAccessKeys } = await client.getAccountAccessKeys({
+  accountId: 'myaccount.testnet',
+  atMomentOf: 'LatestFinalBlock'
+});
+
+console.log(`Account has ${accountAccessKeys.length} access keys:\n`);
+
+for (const key of accountAccessKeys) {
+  console.log('Public Key:', key.publicKey);
+  console.log('Permission:', key.accessKey.permission.permissionType);
+  
+  if (key.accessKey.permission.permissionType === 'FunctionCall') {
+    console.log('  Contract:', key.accessKey.permission.receiverId);
+    console.log('  Methods:', key.accessKey.permission.methodNames);
+    console.log('  Allowance:', key.accessKey.permission.allowance);
+  }
+  
+  console.log('  Nonce:', key.accessKey.nonce);
+  console.log();
+}
+```
+
+### Delete Access Keys
+
+```typescript
+import { deleteKey } from 'near-api-ts';
+
+// Remove an access key
+await signer.executeTransaction({
+  intent: {
+    action: deleteKey({
+      publicKey: 'ed25519:public-key-to-remove'
+    }),
+    receiverAccountId: 'myaccount.testnet'
+  }
+});
+
+console.log('Access key removed');
+```
+
+## Advanced Key Management
+
+### Key Rotation
+
+Regularly rotate keys for security:
+
+```typescript
+import { addFullAccessKey, deleteKey, randomEd25519KeyPair } from 'near-api-ts';
+
+async function rotateKey(
+  signer: MemorySigner,
+  accountId: string,
+  oldPublicKey: string
+) {
+  // Generate new key
+  const newKey = randomEd25519KeyPair();
+  
+  // Add new key and remove old key in one transaction
+  await signer.executeTransaction({
+    intent: {
+      actions: [
+        addFullAccessKey({ publicKey: newKey.publicKey }),
+        deleteKey({ publicKey: oldPublicKey })
+      ],
+      receiverAccountId: accountId
+    }
+  });
+  
+  return newKey;
+}
+
+// Usage
+const newKey = await rotateKey(
+  signer,
+  'myaccount.testnet',
+  'ed25519:old-public-key'
+);
+
+console.log('New private key (update your storage):', newKey.privateKey);
+```
+
+### Multi-Key Account Setup
+
+```typescript
+import { addFullAccessKey, randomEd25519KeyPair } from 'near-api-ts';
+
+// Create multiple keys for redundancy
+const key1 = randomEd25519KeyPair();
+const key2 = randomEd25519KeyPair();
+const key3 = randomEd25519KeyPair();
+
+// Add all keys
+await signer.executeTransaction({
+  intent: {
+    actions: [
+      addFullAccessKey({ publicKey: key1.publicKey }),
+      addFullAccessKey({ publicKey: key2.publicKey }),
+      addFullAccessKey({ publicKey: key3.publicKey })
+    ],
+    receiverAccountId: 'myaccount.testnet'
+  }
+});
+
+console.log('Multiple access keys added');
+console.log('Key 1:', key1.privateKey);
+console.log('Key 2:', key2.privateKey);
+console.log('Key 3:', key3.privateKey);
+```
+
+### Safe Error Handling
+
+```typescript
+import { addFullAccessKey, randomEd25519KeyPair, isNatError } from 'near-api-ts';
+
+const newKey = randomEd25519KeyPair();
+
+const result = await signer.safeExecuteTransaction({
+  intent: {
+    action: addFullAccessKey({ publicKey: newKey.publicKey }),
+    receiverAccountId: 'myaccount.testnet'
+  }
+});
+
+if (!result.ok) {
+  if (isNatError(result.error, 'MemorySigner.ExecuteTransaction.Rpc.Transaction.Signer.KeyNotFound')) {
+    console.log('Current signing key not found on account');
+  } else if (isNatError(result.error, 'MemorySigner.ExecuteTransaction.Rpc.Transaction.Signer.Balance.TooLow')) {
+    console.log('Insufficient balance to add key');
+  } else {
+    console.error('Failed to add key:', result.error.kind);
+  }
+}
+```
+
+## Complete Example: Secure Key Management
+
+Here's a complete example of a key management system:
+
+```typescript
+import {
+  createTestnetClient,
+  createMemoryKeyService,
+  createMemorySigner,
+  randomEd25519KeyPair,
+  addFullAccessKey,
+  addFunctionCallKey,
+  deleteKey,
+  near,
+  isNatError
+} from 'near-api-ts';
+import { writeFile, readFile } from 'fs/promises';
+import { join } from 'path';
+
+class KeyManager {
+  private client;
+  private accountId: string;
+  
+  constructor(accountId: string) {
+    this.client = createTestnetClient();
+    this.accountId = accountId;
+  }
+  
+  // Generate and save new key
+  async generateKey(keyName: string): Promise<string> {
+    const keyPair = randomEd25519KeyPair();
+    
+    // Save to file
+    const keyData = {
+      account_id: this.accountId,
+      public_key: keyPair.publicKey,
+      private_key: keyPair.privateKey,
+      created_at: new Date().toISOString()
+    };
+    
+    const keyPath = join('.near-credentials', `${keyName}.json`);
+    await writeFile(keyPath, JSON.stringify(keyData, null, 2));
+    
+    return keyPair.privateKey;
+  }
+  
+  // Load key from file
+  async loadKey(keyName: string): Promise<string> {
+    const keyPath = join('.near-credentials', `${keyName}.json`);
+    const keyData = JSON.parse(await readFile(keyPath, 'utf-8'));
+    return keyData.private_key;
+  }
+  
+  // Add full access key to account
+  async addFullAccessKey(masterKeyName: string, newPublicKey: string) {
+    const privateKey = await this.loadKey(masterKeyName);
+    
+    const keyService = createMemoryKeyService({
+      keySource: { privateKey }
+    });
+    
+    const signer = createMemorySigner({
+      signerAccountId: this.accountId,
+      client: this.client,
+      keyService
+    });
+    
+    try {
+      await signer.executeTransaction({
+        intent: {
+          action: addFullAccessKey({ publicKey: newPublicKey }),
+          receiverAccountId: this.accountId
+        }
+      });
+      console.log('✓ Full access key added');
+    } catch (error) {
+      if (isNatError(error, 'MemorySigner.ExecuteTransaction.Rpc.Transaction.Signer.Balance.TooLow')) {
+        throw new Error('Insufficient balance');
+      }
+      throw error;
+    }
+  }
+  
+  // Add limited access key
+  async addLimitedKey(
+    masterKeyName: string,
+    newPublicKey: string,
+    contractId: string,
+    methods: string[],
+    allowance: string
+  ) {
+    const privateKey = await this.loadKey(masterKeyName);
+    
+    const keyService = createMemoryKeyService({
+      keySource: { privateKey }
+    });
+    
+    const signer = createMemorySigner({
+      signerAccountId: this.accountId,
+      client: this.client,
+      keyService
+    });
+    
+    await signer.executeTransaction({
+      intent: {
+        action: addFunctionCallKey({
+          publicKey: newPublicKey,
+          allowance: near(allowance),
+          receiverId: contractId,
+          methodNames: methods
+        }),
+        receiverAccountId: this.accountId
+      }
+    });
+    
+    console.log('✓ Limited access key added');
+    console.log('  Contract:', contractId);
+    console.log('  Methods:', methods.join(', '));
+    console.log('  Allowance:', allowance, 'NEAR');
+  }
+  
+  // List all keys
+  async listKeys() {
+    const { accountAccessKeys } = await this.client.getAccountAccessKeys({
+      accountId: this.accountId,
+      atMomentOf: 'LatestFinalBlock'
+    });
+    
+    console.log(`\nAccess keys for ${this.accountId}:\n`);
+    
+    for (const key of accountAccessKeys) {
+      console.log('Key:', key.publicKey.substring(0, 20) + '...');
+      console.log('Type:', key.accessKey.permission.permissionType);
+      
+      if (key.accessKey.permission.permissionType === 'FunctionCall') {
+        console.log('Contract:', key.accessKey.permission.receiverId);
+        console.log('Methods:', key.accessKey.permission.methodNames);
+      }
+      
+      console.log();
+    }
+    
+    return accountAccessKeys;
+  }
+  
+  // Remove key
+  async removeKey(masterKeyName: string, publicKeyToRemove: string) {
+    const privateKey = await this.loadKey(masterKeyName);
+    
+    const keyService = createMemoryKeyService({
+      keySource: { privateKey }
+    });
+    
+    const signer = createMemorySigner({
+      signerAccountId: this.accountId,
+      client: this.client,
+      keyService
+    });
+    
+    await signer.executeTransaction({
+      intent: {
+        action: deleteKey({ publicKey: publicKeyToRemove }),
+        receiverAccountId: this.accountId
+      }
+    });
+    
+    console.log('✓ Key removed');
+  }
+}
+
+// Usage example
+async function main() {
+  const manager = new KeyManager('myaccount.testnet');
+  
+  // Generate master key
+  console.log('Generating master key...');
+  await manager.generateKey('master');
+  
+  // Generate and add a backup key
+  console.log('\nGenerating backup key...');
+  const backupKey = await manager.generateKey('backup');
+  const backupPublicKey = randomEd25519KeyPair().publicKey; // In reality, derive from backupKey
+  await manager.addFullAccessKey('master', backupPublicKey);
+  
+  // Generate and add limited access key for contract
+  console.log('\nGenerating contract access key...');
+  const contractKey = await manager.generateKey('contract');
+  const contractPublicKey = randomEd25519KeyPair().publicKey;
+  await manager.addLimitedKey(
+    'master',
+    contractPublicKey,
+    'mycontract.testnet',
+    ['add_message', 'update_message'],
+    '0.5'
+  );
+  
+  // List all keys
+  await manager.listKeys();
+}
+
+main();
+```
+
+## Best Practices
+
+### Never Commit Private Keys
+
+```bash
+# Add to .gitignore
+.near-credentials/
+*.key
+*.json
+```
+
+### Use Environment Variables
+
+```typescript
+import { createMemoryKeyService } from 'near-api-ts';
+
+// Load from environment
+const keyService = createMemoryKeyService({
+  keySource: {
+    privateKey: process.env.NEAR_PRIVATE_KEY!
+  }
+});
+```
+
+### Secure Key Storage
+
+```typescript
+// Encrypt keys at rest
+import { createCipheriv, createDecipheriv, randomBytes } from 'crypto';
+
+function encryptKey(privateKey: string, password: string): string {
+  const iv = randomBytes(16);
+  const cipher = createCipheriv('aes-256-cbc', Buffer.from(password), iv);
+  let encrypted = cipher.update(privateKey, 'utf8', 'hex');
+  encrypted += cipher.final('hex');
+  return iv.toString('hex') + ':' + encrypted;
+}
+
+function decryptKey(encrypted: string, password: string): string {
+  const parts = encrypted.split(':');
+  const iv = Buffer.from(parts[0], 'hex');
+  const encryptedText = parts[1];
+  const decipher = createDecipheriv('aes-256-cbc', Buffer.from(password), iv);
+  let decrypted = decipher.update(encryptedText, 'hex', 'utf8');
+  decrypted += decipher.final('utf8');
+  return decrypted;
+}
+```
+
+### Regular Key Rotation
+
+```typescript
+// Rotate keys every 90 days
+const KEY_ROTATION_DAYS = 90;
+
+interface KeyMetadata {
+  createdAt: Date;
+  lastRotated: Date;
+}
+
+function shouldRotateKey(metadata: KeyMetadata): boolean {
+  const daysSinceRotation = 
+    (Date.now() - metadata.lastRotated.getTime()) / (1000 * 60 * 60 * 24);
+  return daysSinceRotation >= KEY_ROTATION_DAYS;
+}
+```
+
+### Limit Key Permissions
+
+```typescript
+// Prefer function call keys over full access
+const limitedKey = randomEd25519KeyPair();
+
+await signer.executeTransaction({
+  intent: {
+    action: addFunctionCallKey({
+      publicKey: limitedKey.publicKey,
+      allowance: near('0.1'),  // Small allowance
+      receiverId: 'contract.testnet',
+      methodNames: ['specific_method']  // Specific methods only
+    }),
+    receiverAccountId: 'myaccount.testnet'
+  }
+});
+```
+
+## Next Steps
+
+- [Tokens and Gas](/guides/tokens-and-gas) - Understanding NEAR economics
+- [Sending Transactions](/guides/sending-transactions) - Using keys to sign transactions
+- [Working with Contracts](/guides/working-with-contracts) - Contract deployment and interaction

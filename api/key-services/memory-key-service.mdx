@@ -1,0 +1,323 @@
+---
+title: "Memory Key Service"
+description: "In-memory key storage for development and testing"
+---
+
+## Overview
+
+The Memory Key Service provides in-memory storage for private keys and signing functionality. It's designed for development, testing, and scenarios where you manage keys in application memory.
+
+<Warning>
+  The Memory Key Service stores keys in RAM without persistence. Keys are lost when the application restarts. Do not use for production applications with valuable accounts.
+</Warning>
+
+## Creating a Memory Key Service
+
+### Method Signature
+
+```typescript
+createMemoryKeyService(args: CreateMemoryKeyServiceArgs): MemoryKeyService
+safeCreateMemoryKeyService(args: CreateMemoryKeyServiceArgs): Result<MemoryKeyService, Error>
+```
+
+### Parameters
+
+<ParamField path="keySource" type="KeySource" optional>
+  Single key source containing a private key
+</ParamField>
+
+<ParamField path="keySources" type="KeySource[]" optional>
+  Array of key sources for multiple keys (mutually exclusive with `keySource`)
+</ParamField>
+
+```typescript
+type KeySource = {
+  privateKey: PrivateKey; // Ed25519 or Secp256k1 private key
+};
+```
+
+## Interface
+
+The Memory Key Service implements the following interface:
+
+```typescript
+interface MemoryKeyService {
+  // Sign a transaction with a key from the service
+  signTransaction(args: SignTransactionArgs): Promise<SignedTransaction>;
+  safeSignTransaction(args: SignTransactionArgs): Promise<Result<SignedTransaction, Error>>;
+  
+  // Find a key pair by public key
+  findKeyPair(args: FindKeyPairArgs): KeyPair;
+  safeFindKeyPair(args: FindKeyPairArgs): Result<KeyPair, Error>;
+}
+```
+
+## Examples
+
+### Create with Single Key
+
+```typescript
+import { createMemoryKeyService, randomEd25519KeyPair } from 'near-api-ts';
+
+// Generate a new key pair
+const keyPair = randomEd25519KeyPair();
+
+// Create memory key service
+const keyService = createMemoryKeyService({
+  keySource: { privateKey: keyPair.privateKey }
+});
+
+console.log('Key service ready');
+```
+
+### Create with Multiple Keys
+
+```typescript
+import { createMemoryKeyService, randomEd25519KeyPair } from 'near-api-ts';
+
+// Generate multiple key pairs
+const keyPair1 = randomEd25519KeyPair();
+const keyPair2 = randomEd25519KeyPair();
+const keyPair3 = randomEd25519KeyPair();
+
+// Create memory key service with multiple keys
+const keyService = createMemoryKeyService({
+  keySources: [
+    { privateKey: keyPair1.privateKey },
+    { privateKey: keyPair2.privateKey },
+    { privateKey: keyPair3.privateKey }
+  ]
+});
+```
+
+### Find Key Pair
+
+```typescript
+import { createMemoryKeyService, randomEd25519KeyPair } from 'near-api-ts';
+
+const keyPair = randomEd25519KeyPair();
+const keyService = createMemoryKeyService({
+  keySource: { privateKey: keyPair.privateKey }
+});
+
+// Find key pair by public key
+const found = keyService.findKeyPair({ 
+  publicKey: keyPair.publicKey 
+});
+
+console.log('Found key:', found.publicKey);
+```
+
+### Safe Find with Error Handling
+
+```typescript
+const result = keyService.safeFindKeyPair({ 
+  publicKey: somePublicKey 
+});
+
+if (result.ok) {
+  console.log('Found key pair:', result.value);
+} else {
+  if (result.error.kind === 'MemoryKeyService.FindKeyPair.NotFound') {
+    console.error('Key not found in service');
+  }
+}
+```
+
+### Sign Transaction
+
+```typescript
+import { createMemoryKeyService, randomEd25519KeyPair, transfer } from 'near-api-ts';
+
+const keyPair = randomEd25519KeyPair();
+const keyService = createMemoryKeyService({
+  keySource: { privateKey: keyPair.privateKey }
+});
+
+// Get recent block hash
+const block = await client.getBlock();
+
+// Sign transaction
+const signedTx = await keyService.signTransaction({
+  transaction: {
+    signerAccountId: 'sender.near',
+    signerPublicKey: keyPair.publicKey,
+    receiverAccountId: 'receiver.near',
+    nonce: 1,
+    blockHash: block.rawRpcResult.header.hash,
+    action: transfer({ amount: { near: '1' } })
+  }
+});
+
+console.log('Transaction signed:', signedTx);
+```
+
+### Safe Sign with Error Handling
+
+```typescript
+const result = await keyService.safeSignTransaction({
+  transaction: {
+    signerAccountId: 'sender.near',
+    signerPublicKey: keyPair.publicKey,
+    receiverAccountId: 'receiver.near',
+    nonce: 1,
+    blockHash: recentBlockHash,
+    action: transfer({ amount: { near: '1' } })
+  }
+});
+
+if (result.ok) {
+  console.log('Signed transaction:', result.value);
+} else {
+  switch (result.error.kind) {
+    case 'MemoryKeyService.SignTransaction.SigningKeyPair.NotFound':
+      console.error('Signing key not found');
+      break;
+    case 'MemoryKeyService.SignTransaction.Args.InvalidSchema':
+      console.error('Invalid transaction arguments');
+      break;
+    default:
+      console.error('Signing error:', result.error);
+  }
+}
+```
+
+### Use with Client
+
+```typescript
+import { createClient, createMemoryKeyService, randomEd25519KeyPair } from 'near-api-ts';
+
+const keyPair = randomEd25519KeyPair();
+const keyService = createMemoryKeyService({
+  keySource: { privateKey: keyPair.privateKey }
+});
+
+const client = createClient({
+  network: 'testnet',
+  keyService
+});
+
+// Client can now sign transactions automatically
+const result = await client.sendTransaction({
+  signerAccountId: 'sender.testnet',
+  signerPublicKey: keyPair.publicKey,
+  receiverAccountId: 'receiver.testnet',
+  actions: [/* ... */]
+});
+```
+
+## Error Types
+
+### Creation Errors
+
+- `CreateMemoryKeyService.Args.InvalidSchema` - Invalid arguments provided
+- `CreateMemoryKeyService.Internal` - Internal error during creation
+
+### Sign Transaction Errors
+
+- `MemoryKeyService.SignTransaction.Args.InvalidSchema` - Invalid transaction arguments
+- `MemoryKeyService.SignTransaction.SigningKeyPair.NotFound` - Signing key not found in service
+- `MemoryKeyService.SignTransaction.Internal` - Internal signing error
+
+### Find Key Pair Errors
+
+- `MemoryKeyService.FindKeyPair.Args.InvalidSchema` - Invalid search arguments
+- `MemoryKeyService.FindKeyPair.NotFound` - Key pair not found
+- `MemoryKeyService.FindKeyPair.Internal` - Internal error
+
+## Use Cases
+
+<CardGroup cols={2}>
+  <Card title="Development" icon="code">
+    Quickly test transaction signing without setting up persistent storage
+  </Card>
+  
+  <Card title="Testing" icon="flask">
+    Generate and use temporary keys in automated tests
+  </Card>
+  
+  <Card title="Prototyping" icon="wand-magic-sparkles">
+    Build proof-of-concepts without key management infrastructure
+  </Card>
+  
+  <Card title="Short-lived Keys" icon="clock">
+    Applications that create and discard keys within a single session
+  </Card>
+</CardGroup>
+
+## Best Practices
+
+<AccordionGroup>
+  <Accordion title="Development Only">
+    The Memory Key Service is designed for development and testing. For production applications, use:
+    - [File Key Service](/api/key-services/file-key-service) for Node.js
+    - [IDB Key Service](/api/key-services/idb-key-service) for browsers
+    - Hardware wallets or secure key management services
+  </Accordion>
+
+  <Accordion title="Safe Methods">
+    Always use safe methods (`safeFindKeyPair`, `safeSignTransaction`) in production-like code to handle errors gracefully:
+
+    ```typescript
+    const result = await keyService.safeSignTransaction({ transaction });
+    if (!result.ok) {
+      // Handle error appropriately
+      logger.error('Failed to sign transaction:', result.error);
+      return;
+    }
+    ```
+  </Accordion>
+
+  <Accordion title="Key Generation">
+    Generate keys using the provided utilities:
+
+    ```typescript
+    import { randomEd25519KeyPair } from 'near-api-ts';
+
+    // Ed25519 (recommended)
+    const ed25519Key = randomEd25519KeyPair();
+
+    // Secp256k1 (for Bitcoin-like signatures)
+    const secp256k1Key = randomSecp256k1KeyPair();
+    ```
+  </Accordion>
+</AccordionGroup>
+
+## Type Definitions
+
+```typescript
+interface MemoryKeyService {
+  signTransaction: SignTransaction;
+  safeSignTransaction: SafeSignTransaction;
+  findKeyPair: FindKeyPair;
+  safeFindKeyPair: SafeFindKeyPair;
+}
+
+type KeySource = {
+  privateKey: PrivateKey;
+};
+
+type CreateMemoryKeyServiceArgs = 
+  | { keySource: KeySource; keySources?: never }
+  | { keySource?: never; keySources: KeySource[] };
+
+type SignTransactionArgs = {
+  transaction: Transaction;
+};
+
+type FindKeyPairArgs = {
+  publicKey: PublicKey;
+};
+```
+
+## Source Code
+
+- Implementation: `universal/src/keyServices/memoryKeyService/createMemoryKeyService.ts:35`
+- Type definitions: `universal/types/keyServices/memoryKeyService/createMemoryKeyService.ts:1`
+- Tests: `universal/tests/unit/keyService/memoryKeyService/findKeyPair.test.ts:1`
+
+## Related
+
+- [File Key Service](/api/key-services/file-key-service) - Persistent file-based key storage for Node.js
+- [IDB Key Service](/api/key-services/idb-key-service) - Browser-based key storage
+- [Key Pairs](/api/crypto/key-pairs) - Working with cryptographic keys

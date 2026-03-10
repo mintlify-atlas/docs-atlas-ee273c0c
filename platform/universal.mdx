@@ -1,0 +1,496 @@
+---
+title: Universal
+description: Cross-platform features and APIs that work in both browser and Node.js
+---
+
+## Overview
+
+The universal module contains platform-agnostic functionality that works in both browser and Node.js environments. All features in this module are automatically included when you import the browser or Node.js builds.
+
+## Installation
+
+```bash
+npm install near-api-ts
+```
+
+## When to Use Universal Imports
+
+Use universal features when:
+- Building cross-platform libraries
+- You don't need platform-specific key storage (IndexedDB or file system)
+- Using in-memory key management is sufficient
+- Building tools or scripts that should work everywhere
+
+## Import Strategies
+
+### Automatic Platform Detection
+
+Recommended for most applications:
+
+```typescript
+// Automatically uses browser or node build based on environment
+import { createTestnetClient, createMemoryKeyService } from 'near-api-ts';
+```
+
+### Explicit Universal Import
+
+For cross-platform libraries or when you specifically want universal features:
+
+```typescript
+import {
+  createTestnetClient,
+  createMemoryKeyService,
+  createMemorySigner,
+} from 'near-api-ts';
+```
+
+### Import Hierarchy
+
+```
+universal (cross-platform)
+    ↓ exports to
+    ├── browser (+ IndexedDB key service)
+    └── node    (+ File key service)
+```
+
+Both platform-specific builds re-export all universal features.
+
+## Core Features
+
+### Client
+
+Create NEAR RPC clients for interacting with the blockchain.
+
+```typescript
+import {
+  createClient,
+  createTestnetClient,
+  createMainnetClient,
+  safeCreateClient,
+} from 'near-api-ts';
+
+// Preset clients
+const testnet = createTestnetClient();
+const mainnet = createMainnetClient();
+
+// Custom client
+const client = createClient({
+  rpcUrl: 'https://rpc.testnet.near.org',
+});
+
+// Safe client creation (returns Result)
+const result = safeCreateClient({
+  rpcUrl: 'https://custom-rpc.example.com',
+});
+```
+
+### Memory Key Service
+
+In-memory key management for temporary or testing scenarios.
+
+```typescript
+import {
+  createMemoryKeyService,
+  safeCreateMemoryKeyService,
+  randomEd25519KeyPair,
+} from 'near-api-ts';
+
+const keyPair = randomEd25519KeyPair();
+
+// Single key
+const keyService = createMemoryKeyService({
+  keySource: { privateKey: keyPair.privateKey },
+});
+
+// Multiple keys
+const keyService = createMemoryKeyService({
+  keySources: [
+    { privateKey: 'ed25519:key1...' },
+    { privateKey: 'ed25519:key2...' },
+  ],
+});
+
+// Safe version
+const result = safeCreateMemoryKeyService({
+  keySource: { privateKey: keyPair.privateKey },
+});
+```
+
+<Warning>
+Memory key services lose all keys when the application restarts. Use platform-specific key services (IndexedDB or file system) for persistent storage.
+</Warning>
+
+### Memory Signer
+
+Manage transaction signing with automatic nonce handling and parallel transaction support.
+
+```typescript
+import {
+  createMemorySigner,
+  safeCreateMemorySigner,
+  createMemorySignerFactory,
+} from 'near-api-ts';
+
+const signer = createMemorySigner({
+  signerAccountId: 'myaccount.testnet',
+  client,
+  keyService,
+});
+
+// Execute a transaction
+const result = await signer.executeTransaction({
+  intent: {
+    action: transfer({ amount: near('1') }),
+    receiverAccountId: 'receiver.testnet',
+  },
+});
+
+// Sign without sending
+const signedTx = await signer.signTransaction({
+  intent: {
+    action: transfer({ amount: near('1') }),
+    receiverAccountId: 'receiver.testnet',
+  },
+});
+
+// Factory for creating multiple signers
+const factory = createMemorySignerFactory({
+  client,
+  keyService,
+});
+
+const signer1 = factory({ signerAccountId: 'account1.testnet' });
+const signer2 = factory({ signerAccountId: 'account2.testnet' });
+```
+
+### Action Creators
+
+Type-safe functions for creating NEAR protocol actions.
+
+```typescript
+import {
+  createAccount,
+  transfer,
+  addFullAccessKey,
+  addFunctionCallKey,
+  functionCall,
+  deployContract,
+  stake,
+  deleteKey,
+  deleteAccount,
+  near,
+  teraGas,
+} from 'near-api-ts';
+
+// Transfer NEAR tokens
+const transferAction = transfer({ amount: near('10') });
+
+// Create account
+const createAction = createAccount();
+
+// Add full access key
+const addKeyAction = addFullAccessKey({ publicKey: 'ed25519:...' });
+
+// Add function call key
+const addFnKeyAction = addFunctionCallKey({
+  publicKey: 'ed25519:...',
+  allowance: near('1'),
+  receiverId: 'contract.testnet',
+  methodNames: ['method1', 'method2'],
+});
+
+// Call contract function
+const callAction = functionCall({
+  methodName: 'set_status',
+  args: { status: 'Hello NEAR!' },
+  gas: teraGas('30'),
+  deposit: near('0'),
+});
+
+// Deploy contract
+const deployAction = deployContract({
+  code: new Uint8Array([/* wasm bytes */]),
+});
+
+// Stake
+const stakeAction = stake({
+  amount: near('1000'),
+  publicKey: 'ed25519:...',
+});
+
+// Delete key
+const deleteKeyAction = deleteKey({ publicKey: 'ed25519:...' });
+
+// Delete account
+const deleteAcctAction = deleteAccount({
+  beneficiaryId: 'receiver.testnet',
+});
+```
+
+### Token and Gas Helpers
+
+Utilities for working with NEAR tokens and gas units.
+
+```typescript
+import {
+  near,
+  yoctoNear,
+  nearToken,
+  isNearToken,
+  teraGas,
+  gas,
+  nearGas,
+  isNearGas,
+} from 'near-api-ts';
+
+// NEAR tokens
+const amount1 = near('10');           // 10 NEAR
+const amount2 = yoctoNear('1000000'); // 1000000 yoctoNEAR
+const amount3 = nearToken({ near: '5' });
+
+if (isNearToken(amount1)) {
+  console.log(amount1.near);      // "10"
+  console.log(amount1.yoctoNear); // "10000000000000000000000000"
+}
+
+// Gas units
+const gasAmount1 = teraGas('30');   // 30 TGas
+const gasAmount2 = gas('300000000000000'); // 300 TGas in gas units
+const gasAmount3 = nearGas({ teraGas: '50' });
+
+if (isNearGas(gasAmount1)) {
+  console.log(gasAmount1.teraGas); // "30"
+  console.log(gasAmount1.gas);     // "30000000000000"
+}
+```
+
+### Key Pair Utilities
+
+Generate and work with cryptographic key pairs.
+
+```typescript
+import {
+  keyPair,
+  randomEd25519KeyPair,
+  randomSecp256k1KeyPair,
+} from 'near-api-ts';
+
+// Generate random Ed25519 key pair
+const ed25519Key = randomEd25519KeyPair();
+console.log(ed25519Key.publicKey);  // "ed25519:..."
+console.log(ed25519Key.privateKey); // "ed25519:..."
+
+// Generate random Secp256k1 key pair
+const secp256k1Key = randomSecp256k1KeyPair();
+
+// Create key pair from private key
+const kp = keyPair('ed25519:5J9X...');
+console.log(kp.publicKey);  // Derived public key
+console.log(kp.privateKey); // Original private key
+
+// Sign data
+const signature = kp.sign(new Uint8Array([1, 2, 3]));
+```
+
+### Error Handling
+
+Type-safe error handling with structured error types.
+
+```typescript
+import { isNatError } from 'near-api-ts';
+
+try {
+  await signer.executeTransaction({
+    intent: {
+      action: transfer({ amount: near('1000000') }),
+      receiverAccountId: 'receiver.testnet',
+    },
+  });
+} catch (error) {
+  // Check specific error kind
+  if (isNatError(error, 'MemorySigner.ExecuteTransaction.Rpc.Transaction.Signer.Balance.TooLow')) {
+    console.error('Insufficient balance');
+    console.error('Transaction cost:', error.context.transactionCost);
+  }
+  
+  // Check error category
+  if (isNatError(error, 'Transaction.Action.CreateAccount.AlreadyExist')) {
+    console.error('Account already exists');
+  }
+  
+  // Generic NatError check
+  if (isNatError(error)) {
+    console.error('NEAR API error:', error.kind);
+    console.error('Context:', error.context);
+  }
+}
+```
+
+### Client Methods
+
+Query blockchain data using the client.
+
+```typescript
+import { createTestnetClient } from 'near-api-ts';
+
+const client = createTestnetClient();
+
+// Get account info
+const { accountInfo } = await client.getAccountInfo({
+  accountId: 'account.testnet',
+  atMomentOf: 'LatestFinalBlock',
+});
+
+console.log('Balance:', accountInfo.balance.total.near);
+console.log('Storage used:', accountInfo.storageUsage);
+
+// Get account access keys
+const { keys } = await client.getAccountAccessKeys({
+  accountId: 'account.testnet',
+  atMomentOf: 'LatestFinalBlock',
+});
+
+// Get specific access key
+const { accessKey } = await client.getAccountAccessKey({
+  accountId: 'account.testnet',
+  publicKey: 'ed25519:...',
+  atMomentOf: 'LatestFinalBlock',
+});
+
+// Call contract read function
+const result = await client.callContractReadFunction({
+  contractId: 'contract.testnet',
+  methodName: 'get_status',
+  args: {},
+  atMomentOf: 'LatestFinalBlock',
+});
+
+// Get block
+const { block } = await client.getBlock({
+  blockReference: { blockHeight: 12345 },
+});
+
+// Get protocol config
+const { config } = await client.getProtocolConfig({
+  atMomentOf: 'LatestFinalBlock',
+});
+
+// Get gas price
+const { gasPrice } = await client.getGasPrice({
+  atMomentOf: 'LatestFinalBlock',
+});
+```
+
+## Complete Universal Example
+
+```typescript
+import {
+  createTestnetClient,
+  createMemoryKeyService,
+  createMemorySigner,
+  randomEd25519KeyPair,
+  transfer,
+  near,
+  isNatError,
+} from 'near-api-ts';
+
+// Generate key pair
+const keyPair = randomEd25519KeyPair();
+console.log('Generated key pair:', keyPair.publicKey);
+
+// Create client
+const client = createTestnetClient();
+
+// Create in-memory key service
+const keyService = createMemoryKeyService({
+  keySource: { privateKey: keyPair.privateKey },
+});
+
+// Create signer
+const signer = createMemorySigner({
+  signerAccountId: 'myaccount.testnet',
+  client,
+  keyService,
+});
+
+// Query account info
+const { accountInfo } = await client.getAccountInfo({
+  accountId: 'myaccount.testnet',
+  atMomentOf: 'LatestFinalBlock',
+});
+
+console.log('Current balance:', accountInfo.balance.total.near, 'NEAR');
+
+// Execute transaction with error handling
+try {
+  const result = await signer.executeTransaction({
+    intent: {
+      action: transfer({ amount: near('1') }),
+      receiverAccountId: 'receiver.testnet',
+    },
+  });
+  
+  console.log('Transfer successful!');
+  console.log('Transaction hash:', result.transactionHash);
+} catch (error) {
+  if (isNatError(error, 'MemorySigner.ExecuteTransaction.Rpc.Transaction.Signer.Balance.TooLow')) {
+    console.error('Insufficient balance for transaction');
+  } else if (isNatError(error, 'Transaction.Receiver.NotFound')) {
+    console.error('Receiver account does not exist');
+  } else {
+    console.error('Transaction failed:', error);
+  }
+}
+```
+
+## Safe vs Throwable Versions
+
+Most functions come in two versions:
+
+```typescript
+// Throwable version (throws on error)
+const client = createClient({ rpcUrl: 'https://rpc.testnet.near.org' });
+
+// Safe version (returns Result<T, E>)
+const result = safeCreateClient({ rpcUrl: 'https://rpc.testnet.near.org' });
+
+if (result.ok) {
+  const client = result.value;
+} else {
+  console.error('Failed to create client:', result.error);
+}
+```
+
+The safe version is useful when you want to handle errors explicitly without try/catch.
+
+## Type Exports
+
+The universal module exports comprehensive TypeScript types:
+
+```typescript
+import type {
+  Client,
+  MemoryKeyService,
+  MemorySigner,
+  Transaction,
+  SignedTransaction,
+  Action,
+  AccountId,
+  PublicKey,
+  PrivateKey,
+  KeyPair,
+  BlockReference,
+  TransferAction,
+  FunctionCallAction,
+  CallContractReadFunction,
+  GetAccountInfo,
+  PartialTransportPolicy,
+} from 'near-api-ts';
+```
+
+## See Also
+
+- [Browser Platform](/platform/browser) - IndexedDB key storage for browsers
+- [Node.js Platform](/platform/nodejs) - File-based key storage for Node.js
+- [Client Methods](/api/client) - Detailed client API reference
+- [Error Handling](/concepts/error-handling) - Working with NatError

@@ -1,0 +1,457 @@
+---
+title: "Transaction Types"
+description: "TypeScript type definitions for NEAR transactions"
+---
+
+Type definitions for NEAR transactions, actions, and signed transactions.
+
+## Transaction
+
+Represents a complete transaction ready to be signed.
+
+```typescript
+type Transaction = {
+  signerAccountId: AccountId;
+  signerPublicKey: PublicKey;
+  receiverAccountId: AccountId;
+  nonce: Nonce;
+  blockHash: BlockHash;
+} & (
+  | { action: Action; actions?: never }
+  | { action?: never; actions: Action[] }
+);
+```
+
+### Properties
+
+- **`signerAccountId`** (AccountId): Account ID of the signer
+- **`signerPublicKey`** (PublicKey): Public key of the signer
+- **`receiverAccountId`** (AccountId): Account ID of the receiver
+- **`nonce`** (Nonce): Transaction nonce (incrementing number)
+- **`blockHash`** (BlockHash): Recent block hash
+- **`action`** (Action): Single action (mutually exclusive with `actions`)
+- **`actions`** (Action[]): Multiple actions (mutually exclusive with `action`)
+
+## TransactionIntent
+
+A simplified transaction specification before adding nonce and block hash.
+
+```typescript
+type TransactionIntent = {
+  receiverAccountId: AccountId;
+} & (
+  | { action: Action; actions?: never }
+  | { action?: never; actions: Action[] }
+);
+```
+
+**Example:**
+
+```typescript
+import { transfer, near } from '@near-api/universal';
+
+const intent: TransactionIntent = {
+  receiverAccountId: 'bob.near',
+  action: transfer({ amount: { near: '1' } })
+};
+```
+
+## SignedTransaction
+
+A transaction with a cryptographic signature.
+
+```typescript
+type SignedTransaction = {
+  transaction: Transaction;
+  transactionHash: CryptoHash;
+  signature: Signature;
+};
+```
+
+### Properties
+
+- **`transaction`** (Transaction): The original transaction
+- **`transactionHash`** (CryptoHash): Hash of the transaction
+- **`signature`** (Signature): Cryptographic signature
+
+**Example:**
+
+```typescript
+import { client, signer } from './setup';
+
+const signedTx = await signer.signTransaction({
+  receiverAccountId: 'bob.near',
+  action: transfer({ amount: { near: '1' } })
+});
+
+const result = await client.sendSignedTransaction(signedTx);
+```
+
+## Action
+
+Union type of all possible transaction actions.
+
+```typescript
+type Action =
+  | CreateAccountAction
+  | TransferAction
+  | AddFullAccessKeyAction
+  | AddFunctionCallKeyAction
+  | DeployContractAction
+  | FunctionCallAction
+  | StakeAction
+  | DeleteKeyAction
+  | DeleteAccountAction;
+```
+
+### Action Types
+
+#### TransferAction
+
+Transfer NEAR tokens.
+
+```typescript
+type TransferAction = {
+  actionType: 'Transfer';
+  amount: NearTokenArgs;
+};
+```
+
+**Example:**
+
+```typescript
+import { transfer, near } from '@near-api/universal';
+
+const action = transfer({ amount: { near: '1.5' } });
+```
+
+#### FunctionCallAction
+
+Call a contract function.
+
+```typescript
+type FunctionCallAction = {
+  actionType: 'FunctionCall';
+  functionName: ContractFunctionName;
+  functionArgs: Uint8Array;
+  gasLimit: NearGasArgs;
+  attachedDeposit?: NearTokenArgs;
+};
+```
+
+**Example:**
+
+```typescript
+import { functionCall, teraGas } from '@near-api/universal';
+
+const action = functionCall({
+  functionName: 'transfer',
+  functionArgs: { receiver_id: 'bob.near', amount: '100' },
+  gasLimit: { teraGas: '300' },
+  attachedDeposit: { near: '0' }
+});
+```
+
+#### CreateAccountAction
+
+Create a new account.
+
+```typescript
+type CreateAccountAction = {
+  actionType: 'CreateAccount';
+};
+```
+
+**Example:**
+
+```typescript
+import { createAccount } from '@near-api/universal';
+
+const action = createAccount();
+```
+
+#### DeployContractAction
+
+Deploy a contract.
+
+```typescript
+type DeployContractAction = {
+  actionType: 'DeployContract';
+  code: Uint8Array;
+};
+```
+
+**Example:**
+
+```typescript
+import { deployContract } from '@near-api/universal';
+import { readFileSync } from 'fs';
+
+const wasmCode = readFileSync('contract.wasm');
+const action = deployContract({ code: wasmCode });
+```
+
+#### StakeAction
+
+Stake tokens for validation.
+
+```typescript
+type StakeAction = {
+  actionType: 'Stake';
+  stake: NearTokenArgs;
+  publicKey: PublicKey;
+};
+```
+
+**Example:**
+
+```typescript
+import { stake, near } from '@near-api/universal';
+
+const action = stake({
+  stake: { near: '1000' },
+  publicKey: 'ed25519:...'
+});
+```
+
+#### AddFullAccessKeyAction
+
+Add a full access key.
+
+```typescript
+type AddFullAccessKeyAction = {
+  actionType: 'AddFullAccessKey';
+  publicKey: PublicKey;
+  nonce?: Nonce;
+};
+```
+
+**Example:**
+
+```typescript
+import { addFullAccessKey } from '@near-api/universal';
+
+const action = addFullAccessKey({
+  publicKey: 'ed25519:...'
+});
+```
+
+#### AddFunctionCallKeyAction
+
+Add a function call access key (limited permissions).
+
+```typescript
+type AddFunctionCallKeyAction = {
+  actionType: 'AddFunctionCallKey';
+  publicKey: PublicKey;
+  allowance?: NearTokenArgs;
+  receiverId?: AccountId;
+  functionNames?: string[];
+  nonce?: Nonce;
+};
+```
+
+**Example:**
+
+```typescript
+import { addFunctionCallKey, near } from '@near-api/universal';
+
+const action = addFunctionCallKey({
+  publicKey: 'ed25519:...',
+  allowance: { near: '0.25' },
+  receiverId: 'contract.near',
+  functionNames: ['transfer', 'withdraw']
+});
+```
+
+#### DeleteKeyAction
+
+Delete an access key.
+
+```typescript
+type DeleteKeyAction = {
+  actionType: 'DeleteKey';
+  publicKey: PublicKey;
+};
+```
+
+**Example:**
+
+```typescript
+import { deleteKey } from '@near-api/universal';
+
+const action = deleteKey({
+  publicKey: 'ed25519:...'
+});
+```
+
+#### DeleteAccountAction
+
+Delete an account and transfer remaining balance.
+
+```typescript
+type DeleteAccountAction = {
+  actionType: 'DeleteAccount';
+  beneficiaryId: AccountId;
+};
+```
+
+**Example:**
+
+```typescript
+import { deleteAccount } from '@near-api/universal';
+
+const action = deleteAccount({
+  beneficiaryId: 'alice.near'
+});
+```
+
+## Native Types
+
+Internal representations used for serialization.
+
+### NativeTransaction
+
+```typescript
+type NativeTransaction = {
+  signerId: AccountId;
+  publicKey: NativePublicKey;
+  actions: NativeAction[];
+  receiverId: AccountId;
+  nonce: bigint;
+  blockHash: Uint8Array;
+};
+```
+
+### NativeSignedTransaction
+
+```typescript
+type NativeSignedTransaction = {
+  transaction: NativeTransaction;
+  signature: NativeSignature;
+};
+```
+
+### NativeAction
+
+Native representation of actions for Borsh serialization.
+
+```typescript
+type NativeAction =
+  | NativeCreateAccountAction
+  | NativeTransferAction
+  | NativeAddKeyAction
+  | NativeDeployContractAction
+  | NativeFunctionCallAction
+  | NativeStakeAction
+  | NativeDeleteKeyAction
+  | NativeDeleteAccountAction;
+```
+
+## Common Types
+
+### Nonce
+
+```typescript
+type Nonce = number;
+```
+
+An incrementing number that prevents transaction replay attacks. Each transaction from an account must have a nonce greater than the previous transaction.
+
+### BlockHash
+
+```typescript
+type BlockHash = CryptoHash;
+type CryptoHash = string; // 32 bytes
+```
+
+A recent block hash used to ensure transaction validity window.
+
+## Examples
+
+### Simple Transfer Transaction
+
+```typescript
+import { transfer, near } from '@near-api/universal';
+
+const transaction: Transaction = {
+  signerAccountId: 'alice.near',
+  signerPublicKey: 'ed25519:...',
+  receiverAccountId: 'bob.near',
+  nonce: 12345,
+  blockHash: 'DkZgMd8T7K3Y...',
+  action: transfer({ amount: { near: '1' } })
+};
+```
+
+### Multiple Actions
+
+```typescript
+import { transfer, functionCall, near, teraGas } from '@near-api/universal';
+
+const transaction: Transaction = {
+  signerAccountId: 'alice.near',
+  signerPublicKey: 'ed25519:...',
+  receiverAccountId: 'contract.near',
+  nonce: 12346,
+  blockHash: 'DkZgMd8T7K3Y...',
+  actions: [
+    transfer({ amount: { near: '1' } }),
+    functionCall({
+      functionName: 'my_method',
+      functionArgs: { key: 'value' },
+      gasLimit: { teraGas: '300' }
+    })
+  ]
+};
+```
+
+### Using Transaction Intent
+
+```typescript
+import { transfer, near } from '@near-api/universal';
+
+// Create intent
+const intent: TransactionIntent = {
+  receiverAccountId: 'bob.near',
+  action: transfer({ amount: { near: '1' } })
+};
+
+// Sign with signer (automatically adds nonce and blockHash)
+const signedTx = await signer.signTransaction(intent);
+
+// Send transaction
+const result = await client.sendSignedTransaction(signedTx);
+```
+
+### Account Creation Flow
+
+```typescript
+import { 
+  createAccount, 
+  addFullAccessKey, 
+  transfer, 
+  near 
+} from '@near-api/universal';
+
+const newAccountKey = randomEd25519KeyPair();
+
+const intent: TransactionIntent = {
+  receiverAccountId: 'newaccount.alice.near',
+  actions: [
+    createAccount(),
+    addFullAccessKey({ publicKey: newAccountKey.publicKey }),
+    transfer({ amount: { near: '10' } })
+  ]
+};
+
+const signedTx = await signer.signTransaction(intent);
+const result = await client.sendSignedTransaction(signedTx);
+```
+
+## Related
+
+- [Action Creators](/api/actions)
+- [Client Types](/api/types/client)
+- [Crypto Types](/api/types/crypto)
+- [Common Types](/api/types/common)

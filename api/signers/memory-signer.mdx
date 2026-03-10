@@ -1,0 +1,162 @@
+---
+title: 'MemorySigner'
+description: 'Create and manage in-memory transaction signers for NEAR accounts'
+---
+
+## Overview
+
+The `MemorySigner` provides an easy way to sign and execute transactions on NEAR. It manages access keys, nonces, and transaction signing automatically.
+
+## Creating a MemorySigner
+
+### `createMemorySigner()`
+
+Creates a new memory-based signer instance.
+
+```typescript
+import { createMemorySigner } from '@near-api-ts/universal';
+
+const signer = createMemorySigner({
+  signerAccountId: 'alice.near',
+  client,
+  keyService
+});
+```
+
+### Parameters
+
+<ParamField path="signerAccountId" type="string" required>
+  The account ID that will sign transactions
+</ParamField>
+
+<ParamField path="client" type="Client" required>
+  NEAR client instance for RPC communication
+</ParamField>
+
+<ParamField path="keyService" type="MemoryKeyService" required>
+  Key service that manages cryptographic keys
+</ParamField>
+
+<ParamField path="keyPool" type="object">
+  Configuration for the key pool
+  
+  <Expandable title="properties">
+    <ParamField path="allowedAccessKeys" type="PublicKey[]">
+      List of public keys that can be used for signing. If not provided, all keys in the key service will be available.
+    </ParamField>
+  </Expandable>
+</ParamField>
+
+<ParamField path="taskQueue" type="object">
+  Configuration for the task queue
+  
+  <Expandable title="properties">
+    <ParamField path="timeoutMs" type="number">
+      Timeout in milliseconds for task execution. Must be non-negative.
+    </ParamField>
+  </Expandable>
+</ParamField>
+
+### Returns
+
+A `MemorySigner` object with the following properties:
+
+- `signerAccountId` - The account ID of the signer
+- `client` - The NEAR client instance
+- `keyService` - The key service instance
+- `signTransaction()` - Signs a transaction (throws on error)
+- `executeTransaction()` - Signs and executes a transaction (throws on error)
+- `safeSignTransaction()` - Signs a transaction (returns Result)
+- `safeExecuteTransaction()` - Signs and executes a transaction (returns Result)
+
+## Factory Pattern
+
+Create a factory function to generate signers for multiple accounts:
+
+```typescript
+import { createMemorySignerFactory } from '@near-api-ts/universal';
+
+const createSigner = createMemorySignerFactory({
+  client,
+  keyService
+});
+
+// Create signers for different accounts
+const aliceSigner = createSigner('alice.near');
+const bobSigner = createSigner('bob.near');
+```
+
+## Complete Example
+
+```typescript
+import { 
+  createClient,
+  createMemoryKeyService,
+  createMemorySigner,
+  transfer,
+  near
+} from '@near-api-ts/universal';
+
+// Setup client
+const client = createClient({ 
+  network: 'testnet' 
+});
+
+// Create key service
+const keyService = createMemoryKeyService({
+  keySource: {
+    seedPhrase: 'your seed phrase here',
+    derivationPath: "m/44'/397'/0'/1'"
+  }
+});
+
+// Create signer
+const signer = createMemorySigner({
+  signerAccountId: 'alice.near',
+  client,
+  keyService
+});
+
+// Execute a transaction
+const result = await signer.executeTransaction({
+  intent: {
+    receiverAccountId: 'bob.near',
+    action: transfer({ amount: near('2.5') })
+  }
+});
+
+console.log('Transaction hash:', result.transactionHash);
+```
+
+## Error Handling
+
+The signer provides both throwing and safe (Result-based) variants:
+
+```typescript
+// Throwing variant (easier to use)
+try {
+  const result = await signer.executeTransaction({ intent });
+  console.log('Success:', result);
+} catch (error) {
+  console.error('Failed:', error);
+}
+
+// Safe variant (explicit error handling)
+const result = await signer.safeExecuteTransaction({ intent });
+if (result.ok) {
+  console.log('Success:', result.value);
+} else {
+  console.error('Failed:', result.error.kind);
+}
+```
+
+## Common Errors
+
+- `CreateMemorySigner.Args.InvalidSchema` - Invalid arguments provided
+- `CreateMemorySigner.Internal` - Internal error during signer creation
+
+## See Also
+
+- [executeTransaction](/api/signers/execute-transaction) - Execute transactions
+- [Action Creators](/api/actions/transfer) - Available action types
+- [MemoryKeyService](/api/keys/memory-key-service) - Key management

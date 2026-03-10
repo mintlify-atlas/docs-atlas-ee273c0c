@@ -1,0 +1,259 @@
+---
+title: 'Get Contract State'
+description: 'Retrieve the raw storage state of a NEAR smart contract'
+---
+
+## Overview
+
+The `getContractState` method retrieves the raw key-value storage state of a NEAR smart contract. This is useful for inspecting contract storage directly without calling view functions.
+
+## Method Signature
+
+```typescript
+client.getContractState(args: GetContractStateArgs)
+  : Promise<GetContractStateResult>
+```
+
+Source: `packages/near-api-ts/universal/src/client/methods/contract/getContractState.ts:31`
+
+## Parameters
+
+<ParamField path="contractAccountId" type="string" required>
+  The account ID of the contract whose state to retrieve
+</ParamField>
+
+<ParamField path="atMomentOf" type="BlockReference" optional>
+  Block reference to query the contract state at a specific point in time. Can be:
+  - `{ blockId: string }` - Block hash
+  - `{ blockHeight: number }` - Block height  
+  - `{ finality: 'optimistic' | 'final' }` - Finality level
+</ParamField>
+
+<ParamField path="keyPrefix" type="string" optional>
+  Filter results to only include keys starting with this prefix. The prefix is encoded as UTF-8 bytes.
+</ParamField>
+
+<ParamField path="includeProof" type="boolean" optional>
+  Whether to include a merkle proof of the state. Useful for verification purposes.
+</ParamField>
+
+<ParamField path="policies" type="object" optional>
+  <ParamField path="transport" type="PartialTransportPolicy" optional>
+    Transport-level policies for the request
+  </ParamField>
+</ParamField>
+
+<ParamField path="options" type="object" optional>
+  <ParamField path="signal" type="AbortSignal" optional>
+    AbortSignal for canceling the request
+  </ParamField>
+</ParamField>
+
+## Response
+
+<ResponseField name="blockHash" type="string" required>
+  Hash of the block at which the state was queried
+</ResponseField>
+
+<ResponseField name="blockHeight" type="number" required>
+  Height of the block at which the state was queried
+</ResponseField>
+
+<ResponseField name="contractAccountId" type="string" required>
+  The account ID of the contract (echoed from request)
+</ResponseField>
+
+<ResponseField name="contractState" type="StateRecord[]" required>
+  Array of key-value pairs representing the contract's storage state.
+  
+  <ResponseField name="key" type="string" required>
+    Base64-encoded storage key
+  </ResponseField>
+  
+  <ResponseField name="value" type="string" required>
+    Base64-encoded storage value
+  </ResponseField>
+</ResponseField>
+
+<ResponseField name="proof" type="string[]" optional>
+  Merkle proof for the state (only present if `includeProof` was true)
+</ResponseField>
+
+## Implementation Details
+
+The method makes an RPC call with the following structure:
+
+```typescript
+// Source: packages/near-api-ts/universal/src/client/methods/contract/getContractState.ts:38-49
+await sendRequest({
+  method: 'query',
+  params: {
+    request_type: 'view_state',
+    account_id: args.contractAccountId,
+    prefix_base64: base64KeyPrefix,
+    include_proof: args.includeProof,
+    ...toNativeBlockReference(args.atMomentOf),
+  },
+  transportPolicy: args.policies?.transport,
+  signal: args.options?.signal,
+});
+```
+
+## Examples
+
+### Get All Contract State
+
+```typescript
+import { createClient, mainnet } from '@near-js/client';
+
+const client = createClient({ network: mainnet });
+
+const state = await client.getContractState({
+  contractAccountId: 'example.near',
+});
+
+console.log('Contract state at block:', state.blockHeight);
+console.log('Number of storage entries:', state.contractState.length);
+
+for (const { key, value } of state.contractState) {
+  const decodedKey = Buffer.from(key, 'base64').toString();
+  const decodedValue = Buffer.from(value, 'base64').toString();
+  console.log(`${decodedKey}: ${decodedValue}`);
+}
+```
+
+### Get State with Key Prefix
+
+```typescript
+const state = await client.getContractState({
+  contractAccountId: 'nft.example.near',
+  keyPrefix: 'token:', // Only get keys starting with "token:"
+});
+
+console.log('Found', state.contractState.length, 'token entries');
+```
+
+### Get Historical State
+
+```typescript
+// Query state at a specific block height
+const historicalState = await client.getContractState({
+  contractAccountId: 'example.near',
+  atMomentOf: {
+    blockHeight: 123456789,
+  },
+});
+
+console.log('State at block', historicalState.blockHeight);
+```
+
+### Get State with Proof
+
+```typescript
+const stateWithProof = await client.getContractState({
+  contractAccountId: 'example.near',
+  includeProof: true,
+});
+
+if (stateWithProof.proof) {
+  console.log('Merkle proof:', stateWithProof.proof);
+  // Use proof for verification
+}
+```
+
+### Decode Storage Values
+
+```typescript
+import { base64 } from '@scure/base';
+
+const state = await client.getContractState({
+  contractAccountId: 'ft.example.near',
+  keyPrefix: 'accounts:',
+});
+
+for (const { key, value } of state.contractState) {
+  const keyBytes = base64.decode(key);
+  const valueBytes = base64.decode(value);
+  
+  // Decode key (assuming UTF-8 string)
+  const accountId = new TextDecoder().decode(keyBytes);
+  
+  // Decode value (assuming JSON)
+  const accountData = JSON.parse(new TextDecoder().decode(valueBytes));
+  
+  console.log(`${accountId}:`, accountData);
+}
+```
+
+### With Abort Signal
+
+```typescript
+const controller = new AbortController();
+
+// Cancel after 10 seconds
+setTimeout(() => controller.abort(), 10000);
+
+try {
+  const state = await client.getContractState({
+    contractAccountId: 'large-contract.near',
+    options: {
+      signal: controller.signal,
+    },
+  });
+  console.log('Retrieved state:', state.contractState.length, 'entries');
+} catch (error) {
+  if (error.name === 'AbortError') {
+    console.log('Request was aborted');
+  }
+}
+```
+
+## Use Cases
+
+### Debugging Contract Storage
+
+Inspect raw storage to debug contract issues:
+
+```typescript
+const state = await client.getContractState({
+  contractAccountId: 'debug.near',
+});
+
+// Find all storage keys
+const keys = state.contractState.map(({ key }) => 
+  Buffer.from(key, 'base64').toString('utf8')
+);
+
+console.log('Storage keys:', keys);
+```
+
+### Exporting Contract Data
+
+Export all contract data for backup or analysis:
+
+```typescript
+const state = await client.getContractState({
+  contractAccountId: 'backup.near',
+});
+
+const exportData = state.contractState.map(({ key, value }) => ({
+  key: Buffer.from(key, 'base64').toString('hex'),
+  value: Buffer.from(value, 'base64').toString('hex'),
+  blockHeight: state.blockHeight,
+}));
+
+await fs.writeFile('contract-state.json', JSON.stringify(exportData, null, 2));
+```
+
+## Notes
+
+- Storage keys and values are always base64-encoded in the response
+- Large contracts may have many storage entries; consider using `keyPrefix` to filter
+- The method queries RPC nodes, not the blockchain directly
+- Historical state is available depending on RPC node archival capabilities
+- Storage layout depends on the contract implementation
+
+## Related Methods
+
+- [Call Contract Read Function](/api/contract/call-read-function) - Execute contract view functions
+- [Send Signed Transaction](/api/transaction/send-signed-transaction) - Modify contract state

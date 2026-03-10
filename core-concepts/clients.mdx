@@ -1,0 +1,337 @@
+---
+title: "Clients"
+description: "Learn about the Client architecture and how to interact with NEAR RPC endpoints"
+---
+
+## Overview
+
+The `Client` is the foundational component of the NEAR API TypeScript library. It provides a strongly-typed interface to interact with NEAR RPC endpoints, handling network communication, caching, and error management.
+
+## Architecture
+
+The Client follows a dual-variant pattern, offering both **throwable** and **safe** versions of every method:
+
+- **Throwable variants**: Traditional methods that throw errors (e.g., `getAccountInfo`)
+- **Safe variants**: Return a `Result<T, E>` type for explicit error handling (e.g., `safeGetAccountInfo`)
+
+```typescript
+type Client = {
+  // Throwable variants
+  getAccountInfo: GetAccountInfo;
+  getAccountAccessKey: GetAccountAccessKey;
+  getAccountAccessKeys: GetAccountAccessKeys;
+  callContractReadFunction: CallContractReadFunction;
+  getBlock: GetBlock;
+  getRecentBlockHash: GetRecentBlockHash;
+  sendSignedTransaction: SendSignedTransaction;
+  
+  // Safe variants
+  safeGetAccountInfo: SafeGetAccountInfo;
+  safeGetAccountAccessKey: SafeGetAccountAccessKey;
+  safeGetAccountAccessKeys: SafeGetAccountAccessKeys;
+  safeCallContractReadFunction: SafeCallContractReadFunction;
+  safeGetBlock: SafeGetBlock;
+  safeGetRecentBlockHash: SafeGetRecentBlockHash;
+  safeSendSignedTransaction: SafeSendSignedTransaction;
+};
+```
+
+## Creating a Client
+
+### Basic Client Creation
+
+```typescript
+import { createClient } from '@near-api/client';
+
+const client = createClient({
+  transport: {
+    rpcEndpoints: {
+      archival: [{ url: 'https://rpc.testnet.near.org' }]
+    }
+  }
+});
+```
+
+### Using Preset Clients
+
+For convenience, the library provides preset configurations for testnet and mainnet:
+
+```typescript
+import { createTestnetClient, createMainnetClient } from '@near-api/client';
+
+// Testnet client with default configuration
+const testnetClient = createTestnetClient();
+
+// Mainnet client with default configuration
+const mainnetClient = createMainnetClient();
+```
+
+### Safe Client Creation
+
+```typescript
+import { safeCreateClient } from '@near-api/client';
+
+const result = safeCreateClient({
+  transport: {
+    rpcEndpoints: {
+      archival: [{ url: 'https://rpc.testnet.near.org' }]
+    }
+  }
+});
+
+if (result.ok) {
+  const client = result.value;
+  // Use client
+} else {
+  // Handle error
+  console.error(result.error.kind);
+}
+```
+
+## Client Methods
+
+### Account Methods
+
+<Tabs>
+  <Tab title="getAccountInfo">
+    Fetch account information including balance, storage usage, and code hash.
+
+    ```typescript
+    const accountInfo = await client.getAccountInfo({
+      accountId: 'alice.near',
+      atMomentOf: 'LatestFinalBlock'
+    });
+
+    console.log(accountInfo.balance); // Account balance in yoctoNEAR
+    console.log(accountInfo.storage_usage); // Storage used in bytes
+    ```
+
+    **Safe variant:**
+    ```typescript
+    const result = await client.safeGetAccountInfo({
+      accountId: 'alice.near'
+    });
+
+    if (!result.ok) {
+      if (result.error.kind === 'Client.GetAccountInfo.Rpc.Account.NotFound') {
+        console.log('Account does not exist');
+      }
+    }
+    ```
+  </Tab>
+
+  <Tab title="getAccountAccessKey">
+    Retrieve a specific access key for an account.
+
+    ```typescript
+    const accessKey = await client.getAccountAccessKey({
+      accountId: 'alice.near',
+      publicKey: 'ed25519:...'
+    });
+    ```
+  </Tab>
+
+  <Tab title="getAccountAccessKeys">
+    List all access keys for an account.
+
+    ```typescript
+    const accessKeys = await client.getAccountAccessKeys({
+      accountId: 'alice.near'
+    });
+
+    for (const key of accessKeys.keys) {
+      console.log(key.public_key);
+    }
+    ```
+  </Tab>
+</Tabs>
+
+### Contract Methods
+
+#### callContractReadFunction
+
+Call a read-only contract function (view call):
+
+```typescript
+const result = await client.callContractReadFunction({
+  contractAccountId: 'counter.near',
+  functionName: 'get_count',
+  atMomentOf: 'LatestFinalBlock'
+});
+
+console.log(result); // Function return value
+```
+
+**With arguments:**
+
+```typescript
+const balance = await client.callContractReadFunction({
+  contractAccountId: 'token.near',
+  functionName: 'ft_balance_of',
+  functionArgs: {
+    account_id: 'alice.near'
+  }
+});
+```
+
+**Custom serialization:**
+
+```typescript
+const result = await client.callContractReadFunction({
+  contractAccountId: 'contract.near',
+  functionName: 'custom_function',
+  functionArgs: myCustomData,
+  options: {
+    serializeArgs: (args) => myCustomSerializer(args.functionArgs),
+    deserializeResult: (result) => myCustomDeserializer(result)
+  }
+});
+```
+
+### Block Methods
+
+#### getBlock
+
+Retrieve block information:
+
+```typescript
+// Latest block
+const latestBlock = await client.getBlock({
+  blockReference: 'LatestFinalBlock'
+});
+
+// Specific block by height
+const block = await client.getBlock({
+  blockReference: { blockHeight: 12345678 }
+});
+
+// Specific block by hash
+const block = await client.getBlock({
+  blockReference: { blockHash: '...' }
+});
+```
+
+#### getRecentBlockHash
+
+Get a recent block hash for transaction creation:
+
+```typescript
+const blockHash = await client.getRecentBlockHash();
+```
+
+<Note>
+The block hash is cached internally to reduce RPC calls when creating multiple transactions.
+</Note>
+
+### Transaction Methods
+
+#### sendSignedTransaction
+
+Submit a signed transaction to the network:
+
+```typescript
+const result = await client.sendSignedTransaction({
+  signedTransaction: mySignedTransaction
+});
+
+console.log(result.transaction_outcome.outcome.status);
+```
+
+## Client Context
+
+Internally, the Client maintains a context with shared resources:
+
+```typescript
+type ClientContext = {
+  sendRequest: SendRequest;  // Transport layer for RPC calls
+  cache: Cache;              // Caches recent block hashes
+};
+```
+
+The cache optimizes transaction creation by reducing redundant RPC calls for block hashes.
+
+## Error Handling
+
+The Client implements comprehensive error types through the `NatError` system:
+
+<Accordion title="Client Error Registry">
+```typescript
+interface ClientPublicErrorRegistry {
+  'CreateClient.Args.InvalidSchema': InvalidSchemaErrorContext;
+  'CreateClient.Internal': InternalErrorContext;
+  'Client.GetAccountInfo.Args.InvalidSchema': InvalidSchemaErrorContext;
+  'Client.GetAccountInfo.Rpc.Account.NotFound': { accountId: string };
+  'Client.GetAccountInfo.Rpc.Block.NotFound': { blockReference: BlockReference };
+  // ... and many more
+}
+```
+</Accordion>
+
+### Using Safe Variants for Error Handling
+
+```typescript
+const result = await client.safeGetAccountInfo({
+  accountId: 'maybe-exists.near'
+});
+
+if (!result.ok) {
+  switch (result.error.kind) {
+    case 'Client.GetAccountInfo.Rpc.Account.NotFound':
+      console.log('Account not found:', result.error.context.accountId);
+      break;
+    case 'Client.GetAccountInfo.Args.InvalidSchema':
+      console.log('Invalid arguments:', result.error.context.zodError);
+      break;
+    default:
+      console.log('Unknown error:', result.error.kind);
+  }
+}
+```
+
+## Transport Configuration
+
+The Client supports flexible transport configuration with policies:
+
+```typescript
+const client = createClient({
+  transport: {
+    rpcEndpoints: {
+      archival: [
+        { url: 'https://rpc.mainnet.near.org' },
+        { url: 'https://rpc.mainnet.internal.near.org' }
+      ]
+    },
+    policy: {
+      retries: 3,
+      timeout: 10000,
+      backoff: 'exponential'
+    }
+  }
+});
+```
+
+## Best Practices
+
+<Card title="Choose the Right Variant" icon="lightbulb">
+- Use **throwable variants** for rapid prototyping and simple scripts
+- Use **safe variants** in production code for explicit error handling
+- Mix both variants based on your error handling needs per use case
+</Card>
+
+<Card title="Reuse Client Instances" icon="recycle">
+Create one client instance and reuse it throughout your application. The Client manages internal caching and connection pooling.
+</Card>
+
+<Card title="Handle Block References Carefully" icon="clock">
+Different block references have different guarantees:
+- `LatestOptimisticBlock` - Fastest, but may be rolled back
+- `LatestNearFinalBlock` - Balanced speed and finality
+- `LatestFinalBlock` - Slowest, but guaranteed finality
+</Card>
+
+## Related Concepts
+
+- [Key Services](/core-concepts/key-services) - Manage cryptographic keys
+- [Signers](/core-concepts/signers) - Sign and execute transactions
+- [Transactions](/core-concepts/transactions) - Transaction structure and actions
+- [Error Handling](/core-concepts/error-handling) - NatError system details

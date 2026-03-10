@@ -1,0 +1,441 @@
+---
+title: "Common Types"
+description: "Common TypeScript type definitions used throughout the NEAR API"
+---
+
+Common type definitions used throughout the NEAR API TypeScript library.
+
+## Account & Blockchain Types
+
+### AccountId
+
+NEAR account identifier.
+
+```typescript
+type AccountId = string;
+```
+
+**Examples:**
+- `"alice.near"`
+- `"bob.testnet"`
+- `"app.alice.near"` (subaccount)
+- `"0x1234567890123456789012345678901234567890"` (implicit account)
+
+**Validation:**
+- Minimum length: 2 characters
+- Maximum length: 64 characters
+- Valid characters: `a-z`, `0-9`, `-`, `_`, `.`
+- Cannot start or end with separator (`.`, `-`, `_`)
+- Cannot have consecutive separators
+
+### CryptoHash
+
+A 32-byte cryptographic hash represented as a base58 string.
+
+```typescript
+type CryptoHash = string; // 32 bytes
+```
+
+**Example:**
+```typescript
+const hash: CryptoHash = 'DcA2MzgpJbrUATQLLceocVckhhAqrkingax4oJ9kZ847';
+```
+
+### BlockHash
+
+Identifier for a specific block.
+
+```typescript
+type BlockHash = CryptoHash;
+```
+
+### BlockHeight
+
+Block number in the blockchain.
+
+```typescript
+type BlockHeight = number;
+```
+
+**Example:**
+```typescript
+const height: BlockHeight = 123456789;
+```
+
+### Nonce
+
+Transaction nonce for replay protection.
+
+```typescript
+type Nonce = number;
+```
+
+Each transaction from an account must have a nonce greater than the previous transaction.
+
+## Block Reference Types
+
+### BlockReference
+
+Specifies which block to query.
+
+```typescript
+type BlockReference = 
+  | LatestBlock 
+  | SyncCheckpoint 
+  | BlockId;
+
+type LatestBlock =
+  | 'LatestOptimisticBlock'
+  | 'LatestNearFinalBlock'
+  | 'LatestFinalBlock';
+
+type SyncCheckpoint = 
+  | 'EarliestAvailableBlock' 
+  | 'GenesisBlock';
+
+type BlockId = 
+  | { blockHash: BlockHash }
+  | { blockHeight: BlockHeight };
+```
+
+**Examples:**
+
+```typescript
+// Latest finalized block (recommended)
+const ref1: BlockReference = 'LatestFinalBlock';
+
+// Specific block by height
+const ref2: BlockReference = { blockHeight: 12345 };
+
+// Specific block by hash
+const ref3: BlockReference = { 
+  blockHash: 'DcA2MzgpJbrUATQLLceocVckhhAqrkingax4oJ9kZ847' 
+};
+
+// Near-final block
+const ref4: BlockReference = 'LatestNearFinalBlock';
+
+// Genesis block
+const ref5: BlockReference = 'GenesisBlock';
+```
+
+### NativeBlockReference
+
+Internal representation for RPC calls.
+
+```typescript
+type NativeBlockReference =
+  | { block_id: BlockHash | BlockHeight }
+  | { finality: 'optimistic' | 'near-final' | 'final' }
+  | { sync_checkpoint: 'genesis' | 'earliest_available' };
+```
+
+## Data Encoding Types
+
+### Hex
+
+Data represented as hexadecimal string or raw bytes.
+
+```typescript
+type Hex = Uint8Array | string;
+```
+
+**Examples:**
+
+```typescript
+// Hex string
+const hex1: Hex = '48656c6c6f'; // "Hello"
+
+// Uint8Array
+const hex2: Hex = new Uint8Array([72, 101, 108, 108, 111]);
+```
+
+### Base58String
+
+Base58-encoded string.
+
+```typescript
+type Base58String = string;
+```
+
+### Base64String
+
+Base64-encoded string.
+
+```typescript
+type Base64String = string;
+```
+
+### BorshBytes
+
+Borsh-serialized binary data.
+
+```typescript
+type BorshBytes = Uint8Array;
+```
+
+## Token & Gas Types
+
+### Units
+
+Smallest unit of a token (e.g., yoctoNEAR).
+
+```typescript
+type Units = bigint | string;
+```
+
+**Example:**
+```typescript
+const yocto: Units = 1000000000000000000000000n; // 1 NEAR
+```
+
+### Tokens
+
+Human-readable token amount.
+
+```typescript
+type Tokens = string;
+```
+
+**Example:**
+```typescript
+const amount: Tokens = '1.5'; // 1.5 NEAR
+```
+
+## Contract Types
+
+### ContractFunctionName
+
+Name of a contract function (max 256 characters).
+
+```typescript
+type ContractFunctionName = string;
+```
+
+**Examples:**
+```typescript
+const fn1: ContractFunctionName = 'get_balance';
+const fn2: ContractFunctionName = 'ft_transfer';
+const fn3: ContractFunctionName = 'nft_mint';
+```
+
+### JsonLikeValue
+
+JSON-serializable values for contract arguments.
+
+```typescript
+type JsonLikeValue =
+  | string
+  | number
+  | boolean
+  | null
+  | JsonLikeValue[]
+  | { [key: string]: JsonLikeValue | undefined };
+
+type MaybeJsonLikeValue = JsonLikeValue | undefined;
+```
+
+**Examples:**
+
+```typescript
+// Simple values
+const arg1: JsonLikeValue = 'hello';
+const arg2: JsonLikeValue = 42;
+const arg3: JsonLikeValue = true;
+const arg4: JsonLikeValue = null;
+
+// Arrays
+const arg5: JsonLikeValue = [1, 2, 3];
+
+// Objects
+const arg6: JsonLikeValue = {
+  receiver_id: 'bob.near',
+  amount: '100',
+  memo: 'Payment'
+};
+
+// Nested structures
+const arg7: JsonLikeValue = {
+  user: {
+    name: 'Alice',
+    tokens: [10, 20, 30]
+  }
+};
+```
+
+## Time Types
+
+### Milliseconds
+
+Time duration in milliseconds.
+
+```typescript
+type Milliseconds = number;
+```
+
+**Example:**
+```typescript
+const timeout: Milliseconds = 5000; // 5 seconds
+```
+
+### TimeoutId
+
+Identifier returned by `setTimeout`.
+
+```typescript
+type TimeoutId = ReturnType<typeof setTimeout>;
+```
+
+## Result Types
+
+### Result
+
+Type-safe error handling without exceptions.
+
+```typescript
+type Result<V, E> = ResultOk<V> | ResultErr<E>;
+
+type ResultOk<V> = {
+  ok: true;
+  value: V;
+};
+
+type ResultErr<E> = {
+  ok: false;
+  error: E;
+};
+```
+
+**Examples:**
+
+```typescript
+import { safeNear } from '@near-api/universal';
+
+const result = safeNear('1.5');
+
+if (result.ok) {
+  console.log('Success:', result.value.near);
+} else {
+  console.error('Error:', result.error.kind);
+}
+```
+
+## Examples
+
+### Account ID Validation
+
+```typescript
+function isValidAccountId(accountId: AccountId): boolean {
+  if (accountId.length < 2 || accountId.length > 64) {
+    return false;
+  }
+  
+  // Implicit account (64 hex chars)
+  if (/^[0-9a-f]{64}$/.test(accountId)) {
+    return true;
+  }
+  
+  // Named account
+  return /^[a-z0-9._-]+$/.test(accountId) &&
+    !accountId.startsWith('.') &&
+    !accountId.endsWith('.') &&
+    !accountId.includes('..');
+}
+
+console.log(isValidAccountId('alice.near')); // true
+console.log(isValidAccountId('a')); // false (too short)
+console.log(isValidAccountId('.alice.near')); // false (starts with .)
+```
+
+### Working with Block References
+
+```typescript
+import type { BlockReference } from '@near-api/universal';
+
+function getBlockReference(input: string | number): BlockReference {
+  if (typeof input === 'number') {
+    return { blockHeight: input };
+  }
+  
+  if (input === 'latest') {
+    return 'LatestFinalBlock';
+  }
+  
+  return { blockHash: input };
+}
+
+const ref1 = getBlockReference('latest');
+const ref2 = getBlockReference(12345);
+const ref3 = getBlockReference('DcA2MzgpJ...');
+```
+
+### Using Result Types
+
+```typescript
+import { safeNear, type Result } from '@near-api/universal';
+
+function processTokenAmount(amount: string): string {
+  const result = safeNear(amount);
+  
+  if (result.ok) {
+    return `Valid: ${result.value.yoctoNear} yoctoNEAR`;
+  } else {
+    return `Error: ${result.error.kind}`;
+  }
+}
+
+console.log(processTokenAmount('1.5'));
+console.log(processTokenAmount('invalid'));
+```
+
+### Contract Arguments
+
+```typescript
+import { functionCall, teraGas } from '@near-api/universal';
+import type { JsonLikeValue } from '@near-api/universal';
+
+const args: JsonLikeValue = {
+  receiver_id: 'bob.near',
+  amount: '1000000',
+  memo: 'Payment for services'
+};
+
+const action = functionCall({
+  functionName: 'ft_transfer',
+  functionArgs: args,
+  gasLimit: { teraGas: '300' },
+  attachedDeposit: { near: '0.000000000000000000000001' } // 1 yoctoNEAR
+});
+```
+
+### Converting Hex
+
+```typescript
+function hexToUint8Array(hex: string): Uint8Array {
+  const bytes = new Uint8Array(hex.length / 2);
+  for (let i = 0; i < hex.length; i += 2) {
+    bytes[i / 2] = parseInt(hex.substr(i, 2), 16);
+  }
+  return bytes;
+}
+
+function uint8ArrayToHex(bytes: Uint8Array): string {
+  return Array.from(bytes)
+    .map(b => b.toString(16).padStart(2, '0'))
+    .join('');
+}
+
+const hex = '48656c6c6f';
+const bytes = hexToUint8Array(hex);
+const hexAgain = uint8ArrayToHex(bytes);
+
+console.log(hex === hexAgain); // true
+```
+
+## Related
+
+- [Crypto Types](/api/types/crypto)
+- [Transaction Types](/api/types/transaction)
+- [Client Types](/api/types/client)
+- [NEAR Token Helpers](/api/helpers/near-token)
+- [NEAR Gas Helpers](/api/helpers/near-gas)

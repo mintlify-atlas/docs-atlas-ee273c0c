@@ -1,0 +1,143 @@
+---
+title: 'Installation'
+description: 'Install the NEAR API TypeScript library in your project'
+---
+
+## Package Manager Installation
+
+Install `near-api-ts` using your preferred package manager:
+
+<CodeGroup>
+
+```bash npm
+npm install near-api-ts
+```
+
+```bash yarn
+yarn add near-api-ts
+```
+
+```bash pnpm
+pnpm add near-api-ts
+```
+
+</CodeGroup>
+
+## Requirements
+
+<Note>
+  **Node.js Version**: The library requires Node.js version 24 or higher when running in Node.js environments.
+</Note>
+
+The library also has a peer dependency on Zod for schema validation:
+
+<CodeGroup>
+
+```bash npm
+npm install zod
+```
+
+```bash yarn
+yarn add zod
+```
+
+```bash pnpm
+pnpm add zod
+```
+
+</CodeGroup>
+
+<Note>
+  **Zod Version**: Requires Zod version 4.3.0 or higher (but less than 5.0.0)
+</Note>
+
+## Platform Support
+
+The `near-api-ts` library is designed to work across multiple JavaScript environments:
+
+<CardGroup cols={2}>
+  <Card title="Node.js" icon="node-js">
+    Full support for Node.js 24+ with ESM modules
+  </Card>
+  <Card title="Browser" icon="browser">
+    Complete browser support with IndexedDB key storage
+  </Card>
+  <Card title="TypeScript" icon="code">
+    First-class TypeScript support with full type definitions
+  </Card>
+  <Card title="Modern Build Tools" icon="wrench">
+    Compatible with Vite, Webpack, and other modern bundlers
+  </Card>
+</CardGroup>
+
+## Import Paths
+
+The library provides different entry points for different environments:
+
+### Universal (Default)
+
+Works in both Node.js and browser environments:
+
+```typescript
+import { createTestnetClient, createMemorySigner } from 'near-api-ts';
+```
+
+### Node.js Specific
+
+Includes file-based key service for server environments:
+
+```typescript
+import { createFileKeyService } from 'near-api-ts/node';
+```
+
+### Browser Specific
+
+Includes IndexedDB-based key service for browser environments:
+
+```typescript
+import { createIdbKeyService } from 'near-api-ts/browser';
+```
+
+## Package Structure
+
+The package exports are configured as follows:
+
+```json
+{
+  "exports": {
+    ".": {
+      "browser": "./dist/browser/index.js",
+      "node": "./dist/node/index.js",
+      "default": "./dist/universal/index.js"
+    },
+    "./browser": "./dist/browser/index.js",
+    "./node": "./dist/node/index.js"
+  }
+}
+```
+
+This ensures that your bundler or runtime automatically selects the correct version based on your environment.
+
+## Verify Installation
+
+After installation, verify that the library is working correctly:
+
+```typescript
+import { createTestnetClient } from 'near-api-ts';
+
+const client = createTestnetClient();
+console.log('NEAR API client created successfully!');
+```
+
+If this runs without errors, you're ready to start building with NEAR!
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Quickstart Guide" icon="rocket" href="/quickstart">
+    Build your first NEAR application
+  </Card>
+  <Card title="API Reference" icon="book" href="/api/client/overview">
+    Explore the complete API documentation
+  </Card>
+</CardGroup>

@@ -1,0 +1,426 @@
+---
+title: Reading Blockchain Data
+description: Learn how to query account information, contract state, and blocks from the NEAR blockchain
+---
+
+This guide shows you how to read data from the NEAR blockchain, including account information, contract state, and block data.
+
+## Prerequisites
+
+Install the NEAR API TypeScript library:
+
+```bash
+npm install near-api-ts
+```
+
+## Setting Up a Client
+
+The first step is to create a client that connects to the NEAR network. You can use preset configurations for testnet or mainnet, or create a custom client.
+
+### Using Preset Clients
+
+```typescript
+import { createTestnetClient, createMainnetClient } from 'near-api-ts';
+
+// Connect to testnet
+const testnetClient = createTestnetClient();
+
+// Connect to mainnet
+const mainnetClient = createMainnetClient();
+```
+
+### Custom Client Configuration
+
+```typescript
+import { createClient } from 'near-api-ts';
+
+const client = createClient({
+  transport: {
+    rpcEndpoints: {
+      archival: [{ url: 'https://rpc.testnet.near.org' }]
+    }
+  }
+});
+```
+
+## Reading Account Information
+
+### Basic Account Query
+
+The `getAccountInfo` method retrieves account details including balance, storage usage, and access keys.
+
+```typescript
+import { createTestnetClient } from 'near-api-ts';
+
+const client = createTestnetClient();
+
+const { accountInfo } = await client.getAccountInfo({
+  accountId: 'example.testnet',
+  atMomentOf: 'LatestFinalBlock'
+});
+
+console.log('Account Balance:', accountInfo.balance.total.near, 'NEAR');
+console.log('Storage Used:', accountInfo.storageUsed, 'bytes');
+console.log('Storage Available:', accountInfo.storageAvailable, 'bytes');
+console.log('Locked Balance:', accountInfo.balance.locked.near, 'NEAR');
+```
+
+### Understanding Block References
+
+You can query account state at different points in time using block references:
+
+```typescript
+// Query at latest finalized block (recommended)
+const result1 = await client.getAccountInfo({
+  accountId: 'example.testnet',
+  atMomentOf: 'LatestFinalBlock'
+});
+
+// Query at specific block height
+const result2 = await client.getAccountInfo({
+  accountId: 'example.testnet',
+  atMomentOf: { blockHeight: 123456789 }
+});
+
+// Query at specific block hash
+const result3 = await client.getAccountInfo({
+  accountId: 'example.testnet',
+  atMomentOf: { blockHash: 'ABC123...' }
+});
+
+// Query at optimistic block (not yet finalized)
+const result4 = await client.getAccountInfo({
+  accountId: 'example.testnet',
+  atMomentOf: 'LatestNearFinalBlock'
+});
+```
+
+### Safe Error Handling
+
+Use the `safe` variants to handle errors without throwing exceptions:
+
+```typescript
+import { createTestnetClient, isNatError } from 'near-api-ts';
+
+const client = createTestnetClient();
+
+const result = await client.safeGetAccountInfo({
+  accountId: 'nonexistent.testnet'
+});
+
+if (result.ok) {
+  console.log('Account balance:', result.value.accountInfo.balance.total.near);
+} else {
+  if (isNatError(result.error, 'Client.GetAccountInfo.Rpc.Account.NotFound')) {
+    console.log('Account does not exist');
+  } else {
+    console.error('Error:', result.error.kind);
+  }
+}
+```
+
+## Querying Access Keys
+
+### Get All Access Keys
+
+Retrieve all access keys for an account:
+
+```typescript
+const { accountAccessKeys } = await client.getAccountAccessKeys({
+  accountId: 'example.testnet',
+  atMomentOf: 'LatestFinalBlock'
+});
+
+for (const accessKey of accountAccessKeys) {
+  console.log('Public Key:', accessKey.publicKey);
+  console.log('Nonce:', accessKey.accessKey.nonce);
+  
+  if (accessKey.accessKey.permission.permissionType === 'FullAccess') {
+    console.log('Permission: Full Access');
+  } else {
+    console.log('Permission: Function Call');
+    console.log('Receiver:', accessKey.accessKey.permission.receiverId);
+    console.log('Methods:', accessKey.accessKey.permission.methodNames);
+  }
+}
+```
+
+### Get Specific Access Key
+
+```typescript
+const { accountAccessKey, blockHash } = await client.getAccountAccessKey({
+  accountId: 'example.testnet',
+  publicKey: 'ed25519:5FwoV3MFB94ExfgycBvUQaTbTfgSMPAcfX62bgLBqEPR',
+  atMomentOf: 'LatestFinalBlock'
+});
+
+console.log('Nonce:', accountAccessKey.nonce);
+console.log('Block Hash:', blockHash);
+```
+
+## Reading Contract State
+
+### Calling View Functions
+
+Call read-only contract functions using `callContractReadFunction`:
+
+```typescript
+import { createTestnetClient } from 'near-api-ts';
+
+const client = createTestnetClient();
+
+// Call a view function that returns JSON
+const result = await client.callContractReadFunction({
+  contractAccountId: 'counter.testnet',
+  functionName: 'get_count',
+  functionArgs: {},
+  withStateAt: 'LatestFinalBlock'
+});
+
+console.log('Count:', result.result);
+```
+
+### Passing Function Arguments
+
+```typescript
+// Call view function with arguments
+const result = await client.callContractReadFunction({
+  contractAccountId: 'nft.testnet',
+  functionName: 'nft_token',
+  functionArgs: {
+    token_id: '123'
+  }
+});
+
+if (result.result) {
+  console.log('Token owner:', result.result.owner_id);
+  console.log('Token metadata:', result.result.metadata);
+}
+```
+
+### Custom Serialization and Deserialization
+
+For non-JSON contract formats (e.g., Borsh), provide custom serializers:
+
+```typescript
+import { toJsonBytes, fromJsonBytes } from 'near-api-ts';
+
+const result = await client.callContractReadFunction({
+  contractAccountId: 'contract.testnet',
+  functionName: 'get_data',
+  functionArgs: { id: 42 },
+  options: {
+    // Custom argument serializer
+    serializeArgs: ({ functionArgs }) => {
+      // Convert snake_case for contract
+      return toJsonBytes({ data_id: functionArgs.id });
+    },
+    // Custom result deserializer
+    deserializeResult: ({ resultBytes }) => {
+      const decoded = fromJsonBytes(resultBytes);
+      // Transform the result
+      return {
+        id: decoded.data_id,
+        value: decoded.data_value
+      };
+    }
+  }
+});
+
+console.log('Result:', result.result);
+```
+
+### Error Handling for Contract Calls
+
+```typescript
+const result = await client.safeCallContractReadFunction({
+  contractAccountId: 'contract.testnet',
+  functionName: 'get_item',
+  functionArgs: { item_id: 999 }
+});
+
+if (!result.ok) {
+  if (isNatError(result.error, 'Client.CallContractReadFunction.Rpc.Execution.Failed')) {
+    console.log('Contract execution failed');
+    console.log('Error message:', result.error.context);
+  } else if (isNatError(result.error, 'Client.CallContractReadFunction.Rpc.Account.NotFound')) {
+    console.log('Contract account does not exist');
+  }
+}
+```
+
+## Querying Blocks
+
+### Get Block Information
+
+```typescript
+const { block } = await client.getBlock({
+  blockReference: { blockHeight: 123456789 }
+});
+
+console.log('Block Height:', block.header.height);
+console.log('Block Hash:', block.header.hash);
+console.log('Timestamp:', block.header.timestamp);
+console.log('Gas Price:', block.header.gasPrice);
+console.log('Total Supply:', block.header.totalSupply);
+console.log('Chunks:', block.chunks.length);
+```
+
+### Get Latest Finalized Block
+
+```typescript
+const { block } = await client.getBlock({
+  blockReference: 'LatestFinalBlock'
+});
+
+console.log('Latest finalized block height:', block.header.height);
+```
+
+### Get Recent Block Hash
+
+Useful for transaction signing:
+
+```typescript
+const { blockHash } = await client.getRecentBlockHash();
+console.log('Recent block hash:', blockHash);
+```
+
+## Complete Example: Account Dashboard
+
+Here's a complete example that creates an account information dashboard:
+
+<Steps>
+  <Step title="Create the client">
+    ```typescript
+    import { createTestnetClient, isNatError } from 'near-api-ts';
+
+    const client = createTestnetClient();
+    ```
+  </Step>
+
+  <Step title="Fetch account information">
+    ```typescript
+    async function getAccountDashboard(accountId: string) {
+      // Get account info
+      const accountResult = await client.safeGetAccountInfo({
+        accountId,
+        atMomentOf: 'LatestFinalBlock'
+      });
+
+      if (!accountResult.ok) {
+        if (isNatError(accountResult.error, 'Client.GetAccountInfo.Rpc.Account.NotFound')) {
+          return { error: 'Account not found' };
+        }
+        return { error: 'Failed to fetch account info' };
+      }
+
+      const { accountInfo } = accountResult.value;
+      return accountInfo;
+    }
+    ```
+  </Step>
+
+  <Step title="Fetch access keys">
+    ```typescript
+    async function getAccountKeys(accountId: string) {
+      const result = await client.safeGetAccountAccessKeys({
+        accountId,
+        atMomentOf: 'LatestFinalBlock'
+      });
+
+      if (!result.ok) {
+        return [];
+      }
+
+      return result.value.accountAccessKeys;
+    }
+    ```
+  </Step>
+
+  <Step title="Combine and display">
+    ```typescript
+    async function displayDashboard(accountId: string) {
+      console.log(`\n=== Dashboard for ${accountId} ===\n`);
+
+      // Get account info
+      const info = await getAccountDashboard(accountId);
+      if ('error' in info) {
+        console.log('Error:', info.error);
+        return;
+      }
+
+      console.log('Balance:');
+      console.log('  Total:', info.balance.total.near, 'NEAR');
+      console.log('  Available:', info.balance.available.near, 'NEAR');
+      console.log('  Locked:', info.balance.locked.near, 'NEAR');
+      console.log('\nStorage:');
+      console.log('  Used:', info.storageUsed, 'bytes');
+      console.log('  Available:', info.storageAvailable, 'bytes');
+
+      // Get access keys
+      const keys = await getAccountKeys(accountId);
+      console.log('\nAccess Keys:', keys.length);
+      for (const key of keys) {
+        console.log('  -', key.publicKey);
+        console.log('    Type:', key.accessKey.permission.permissionType);
+        console.log('    Nonce:', key.accessKey.permission.nonce);
+      }
+    }
+
+    // Run the dashboard
+    displayDashboard('example.testnet');
+    ```
+  </Step>
+</Steps>
+
+## Best Practices
+
+### Use LatestFinalBlock for Consistency
+
+Always use `'LatestFinalBlock'` for production queries to ensure data is finalized:
+
+```typescript
+// Good: finalized data
+const result = await client.getAccountInfo({
+  accountId: 'account.testnet',
+  atMomentOf: 'LatestFinalBlock'
+});
+
+// Avoid in production: may be rolled back
+const result = await client.getAccountInfo({
+  accountId: 'account.testnet',
+  atMomentOf: 'LatestNearFinalBlock'
+});
+```
+
+### Handle Errors Gracefully
+
+Use safe variants for better error handling:
+
+```typescript
+const result = await client.safeGetAccountInfo({ accountId: 'test.near' });
+
+if (!result.ok) {
+  // Handle specific error types
+  if (isNatError(result.error, 'Client.GetAccountInfo.Rpc.Account.NotFound')) {
+    // Account doesn't exist
+  } else if (isNatError(result.error, 'Client.GetAccountInfo.Rpc.Block.NotFound')) {
+    // Block reference is invalid
+  }
+}
+```
+
+### Cache Block Hashes
+
+The client automatically caches recent block hashes:
+
+```typescript
+// This is cached and efficient
+const { blockHash } = await client.getRecentBlockHash();
+```
+
+## Next Steps
+
+- [Sending Transactions](/guides/sending-transactions) - Learn how to send transactions
+- [Working with Contracts](/guides/working-with-contracts) - Deploy and interact with smart contracts
+- [Managing Keys](/guides/managing-keys) - Handle cryptographic keys and signatures

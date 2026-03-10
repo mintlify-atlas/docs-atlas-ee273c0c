@@ -1,0 +1,249 @@
+---
+title: 'transfer'
+description: 'Send NEAR tokens from one account to another'
+---
+
+## Overview
+
+The `transfer` action creator sends NEAR tokens from the signer account to a receiver account.
+
+## Signature
+
+```typescript
+transfer(args: {
+  amount: NearTokenArgs
+}): TransferAction
+```
+
+## Parameters
+
+<ParamField path="amount" type="NearTokenArgs" required>
+  The amount of NEAR tokens to transfer. Can be specified in multiple formats:
+  
+  <Expandable title="formats">
+    <ParamField path="near" type="string | number">
+      Amount in NEAR (e.g., `{ near: '2.5' }` or `{ near: 2.5 }`)
+    </ParamField>
+    
+    <ParamField path="yoctoNear" type="string | bigint">
+      Amount in yoctoNEAR (1 NEAR = 10^24 yoctoNEAR)
+    </ParamField>
+  </Expandable>
+</ParamField>
+
+## Returns
+
+A `TransferAction` object:
+
+```typescript
+{
+  actionType: 'Transfer',
+  amount: NearTokenArgs
+}
+```
+
+## Basic Example
+
+```typescript
+import { transfer } from '@near-api-ts/universal';
+
+const action = transfer({
+  amount: { near: '2.5' }
+});
+
+await signer.executeTransaction({
+  intent: {
+    receiverAccountId: 'bob.near',
+    action
+  }
+});
+```
+
+## Using Helper Functions
+
+The library provides helper functions for creating token amounts:
+
+```typescript
+import { transfer, near, yoctoNear } from '@near-api-ts/universal';
+
+// Using near() helper
+const action1 = transfer({ 
+  amount: near('2.5') 
+});
+
+// Using yoctoNear() helper
+const action2 = transfer({ 
+  amount: yoctoNear('2500000000000000000000000') 
+});
+
+// Direct object notation
+const action3 = transfer({ 
+  amount: { near: 2.5 } 
+});
+```
+
+## Large Amount Example
+
+```typescript
+import { transfer, near } from '@near-api-ts/universal';
+
+const action = transfer({
+  amount: near('1000000') // 1 million NEAR
+});
+
+await signer.executeTransaction({
+  intent: {
+    receiverAccountId: 'treasury.near',
+    action
+  }
+});
+```
+
+## Small Amount Example
+
+For very small amounts, use yoctoNEAR:
+
+```typescript
+import { transfer, yoctoNear } from '@near-api-ts/universal';
+
+const action = transfer({
+  amount: yoctoNear('1') // smallest possible amount
+});
+
+await signer.executeTransaction({
+  intent: {
+    receiverAccountId: 'micropayment.near',
+    action
+  }
+});
+```
+
+## Multiple Transfers
+
+You can include multiple transfer actions in a single transaction:
+
+```typescript
+import { transfer, near } from '@near-api-ts/universal';
+
+await signer.executeTransaction({
+  intent: {
+    receiverAccountId: 'alice.near',
+    actions: [
+      transfer({ amount: near('1') }),
+      transfer({ amount: near('2') }),
+      transfer({ amount: near('3') })
+    ]
+  }
+});
+```
+
+<Note>
+Multiple transfer actions in the same transaction all send tokens from the signer to the same receiver. The `receiverAccountId` is specified at the transaction level, not per action.
+</Note>
+
+## Combined with Other Actions
+
+```typescript
+import { 
+  createAccount,
+  transfer,
+  addFullAccessKey,
+  near,
+  randomEd25519KeyPair
+} from '@near-api-ts/universal';
+
+const newKeyPair = randomEd25519KeyPair();
+
+// Create account, fund it, and add a key
+await signer.executeTransaction({
+  intent: {
+    receiverAccountId: 'sub.alice.near',
+    actions: [
+      createAccount(),
+      transfer({ amount: near('10') }),
+      addFullAccessKey({ publicKey: newKeyPair.publicKey })
+    ]
+  }
+});
+```
+
+## Error Handling
+
+```typescript
+import { transfer, near, isNatError } from '@near-api-ts/universal';
+
+try {
+  const action = transfer({ amount: near('100') });
+  
+  await signer.executeTransaction({
+    intent: {
+      receiverAccountId: 'bob.near',
+      action
+    }
+  });
+} catch (error) {
+  if (isNatError(error)) {
+    if (error.kind === 'MemorySigner.ExecuteTransaction.Rpc.Transaction.Signer.Balance.TooLow') {
+      console.error('Insufficient balance for transfer');
+    } else if (error.kind === 'MemorySigner.ExecuteTransaction.Rpc.Transaction.Receiver.NotFound') {
+      console.error('Receiver account does not exist');
+    }
+  }
+}
+```
+
+## Safe Variant
+
+For explicit error handling without try-catch:
+
+```typescript
+import { safeTransfer, near } from '@near-api-ts/universal';
+
+const actionResult = safeTransfer({ amount: near('2.5') });
+
+if (!actionResult.ok) {
+  console.error('Invalid transfer action:', actionResult.error.kind);
+  return;
+}
+
+const result = await signer.safeExecuteTransaction({
+  intent: {
+    receiverAccountId: 'bob.near',
+    action: actionResult.value
+  }
+});
+
+if (result.ok) {
+  console.log('Transfer successful:', result.value.transactionHash);
+} else {
+  console.error('Transfer failed:', result.error.kind);
+}
+```
+
+## Common Errors
+
+- `CreateAction.Transfer.Args.InvalidSchema` - Invalid amount format
+- `CreateAction.Transfer.Internal` - Internal error creating action
+- `MemorySigner.ExecuteTransaction.Rpc.Transaction.Signer.Balance.TooLow` - Insufficient balance
+- `MemorySigner.ExecuteTransaction.Rpc.Transaction.Receiver.NotFound` - Receiver account doesn't exist
+
+## Important Notes
+
+<Warning>
+Transfer amounts must be positive. Zero or negative amounts will result in a validation error.
+</Warning>
+
+<Info>
+The minimum amount you can transfer is 1 yoctoNEAR (10^-24 NEAR).
+</Info>
+
+<Note>
+When creating a new account with a transfer, you must transfer at least the minimum account balance (typically around 0.001 NEAR on mainnet).
+</Note>
+
+## See Also
+
+- [executeTransaction](/api/signers/execute-transaction) - Execute transactions
+- [createAccount](/api/actions/create-account) - Create new accounts
+- [functionCall](/api/actions/function-call) - Call contract functions with deposits
+- [NEAR Token Helpers](/api/helpers/near-token) - Token amount helpers

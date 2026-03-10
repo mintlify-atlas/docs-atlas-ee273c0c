@@ -1,0 +1,257 @@
+---
+title: 'Call Contract Read Function'
+description: 'Execute a read-only function on a NEAR smart contract'
+---
+
+## Overview
+
+The `callContractReadFunction` method allows you to call view/read-only functions on NEAR smart contracts. These functions don't modify state and don't require transaction fees.
+
+## Method Signature
+
+```typescript
+client.callContractReadFunction(args: CallContractReadFunctionArgs)
+  : Promise<Result<CallContractReadFunctionOutput, CallContractReadFunctionError>>
+```
+
+Source: `packages/near-api-ts/universal/src/client/methods/contract/callContractReadFunction/callContractReadFunction.ts:31`
+
+## Parameters
+
+<ParamField path="contractAccountId" type="string" required>
+  The account ID of the contract to call
+</ParamField>
+
+<ParamField path="functionName" type="string" required>
+  The name of the contract function to call
+</ParamField>
+
+<ParamField path="functionArgs" type="unknown" optional>
+  Arguments to pass to the contract function. Must be JSON-serializable unless using a custom serializer.
+</ParamField>
+
+<ParamField path="withStateAt" type="BlockReference" optional>
+  Block reference to query the contract state at a specific point in time. Can be:
+  - `{ blockId: string }` - Block hash
+  - `{ blockHeight: number }` - Block height
+  - `{ finality: 'optimistic' | 'final' }` - Finality level (default: 'final')
+</ParamField>
+
+<ParamField path="policies" type="object" optional>
+  <ParamField path="transport" type="PartialTransportPolicy" optional>
+    Transport-level policies for the request
+  </ParamField>
+</ParamField>
+
+<ParamField path="options" type="object" optional>
+  <ParamField path="signal" type="AbortSignal" optional>
+    AbortSignal for canceling the request
+  </ParamField>
+  
+  <ParamField path="serializeArgs" type="function" optional>
+    Custom function to serialize arguments to `Uint8Array`. Signature:
+    ```typescript
+    (args: { functionArgs: A }) => Uint8Array
+    ```
+  </ParamField>
+  
+  <ParamField path="deserializeResult" type="function" optional>
+    Custom function to deserialize the result. Signature:
+    ```typescript
+    (args: { rawResult: number[] }) => unknown
+    ```
+  </ParamField>
+</ParamField>
+
+## Response
+
+<ResponseField name="ok" type="boolean" required>
+  Indicates if the call was successful
+</ResponseField>
+
+<ResponseField name="value" type="CallContractReadFunctionOutput">
+  <ResponseField name="blockHash" type="string" required>
+    Hash of the block at which the function was executed
+  </ResponseField>
+  
+  <ResponseField name="blockHeight" type="number" required>
+    Height of the block at which the function was executed
+  </ResponseField>
+  
+  <ResponseField name="result" type="unknown" required>
+    Deserialized result of the contract function call
+  </ResponseField>
+  
+  <ResponseField name="rawResult" type="number[]" required>
+    Raw bytes of the result as returned by the contract
+  </ResponseField>
+  
+  <ResponseField name="logs" type="string[]" required>
+    Array of log messages emitted during function execution
+  </ResponseField>
+</ResponseField>
+
+<ResponseField name="error" type="CallContractReadFunctionError">
+  Error object if the call failed. Possible error kinds:
+  - `Client.CallContractReadFunction.Args.InvalidSchema` - Invalid arguments
+  - `Client.CallContractReadFunction.SerializeArgs.Failed` - Argument serialization failed
+  - `Client.CallContractReadFunction.Rpc.Execution.Failed` - Contract execution failed
+  - `Client.CallContractReadFunction.ResultDeserialization.JsonParseFailed` - Result parsing failed
+  - And more (see type definitions)
+</ResponseField>
+
+## Serialization & Deserialization
+
+### Default JSON Serialization
+
+By default, arguments are serialized to JSON and results are deserialized from JSON:
+
+```typescript
+// Source: packages/near-api-ts/universal/src/client/methods/contract/callContractReadFunction/serializeFunctionArgs.ts:57
+const serializedArgs = toJsonBytes(args.functionArgs);
+```
+
+### Custom Serialization
+
+You can provide custom serialization functions for non-JSON data:
+
+```typescript
+const result = await client.callContractReadFunction({
+  contractAccountId: 'example.near',
+  functionName: 'get_data',
+  functionArgs: customData,
+  options: {
+    serializeArgs: ({ functionArgs }) => {
+      // Custom serialization logic
+      return new Uint8Array(/* ... */);
+    },
+    deserializeResult: ({ rawResult }) => {
+      // Custom deserialization logic
+      return /* parsed result */;
+    },
+  },
+});
+```
+
+Source: `packages/near-api-ts/universal/src/client/methods/contract/callContractReadFunction/serializeFunctionArgs.ts:17-41`
+
+## Examples
+
+### Basic Usage
+
+```typescript
+import { createClient, mainnet } from '@near-js/client';
+
+const client = createClient({ network: mainnet });
+
+const result = await client.callContractReadFunction({
+  contractAccountId: 'ft.near',
+  functionName: 'ft_balance_of',
+  functionArgs: {
+    account_id: 'alice.near',
+  },
+});
+
+if (result.ok) {
+  console.log('Balance:', result.value.result);
+  console.log('Block height:', result.value.blockHeight);
+  console.log('Logs:', result.value.logs);
+} else {
+  console.error('Error:', result.error.kind);
+}
+```
+
+### Query at Specific Block
+
+```typescript
+const result = await client.callContractReadFunction({
+  contractAccountId: 'contract.near',
+  functionName: 'get_state',
+  withStateAt: {
+    blockHeight: 123456789,
+  },
+});
+```
+
+### With Custom Deserializer
+
+```typescript
+interface TokenBalance {
+  amount: string;
+  decimals: number;
+}
+
+const result = await client.callContractReadFunction({
+  contractAccountId: 'token.near',
+  functionName: 'get_balance',
+  functionArgs: { account_id: 'alice.near' },
+  options: {
+    deserializeResult: ({ rawResult }) => {
+      const parsed = JSON.parse(Buffer.from(rawResult).toString());
+      return parsed as TokenBalance;
+    },
+  },
+});
+
+if (result.ok) {
+  const balance = result.value.result as TokenBalance;
+  console.log(`Balance: ${balance.amount} (${balance.decimals} decimals)`);
+}
+```
+
+### With Abort Signal
+
+```typescript
+const controller = new AbortController();
+
+// Cancel after 5 seconds
+setTimeout(() => controller.abort(), 5000);
+
+const result = await client.callContractReadFunction({
+  contractAccountId: 'slow-contract.near',
+  functionName: 'expensive_query',
+  options: {
+    signal: controller.signal,
+  },
+});
+```
+
+## Error Handling
+
+The method returns a `Result` type that can be either success or error:
+
+```typescript
+const result = await client.callContractReadFunction({
+  contractAccountId: 'example.near',
+  functionName: 'view_method',
+});
+
+if (!result.ok) {
+  switch (result.error.kind) {
+    case 'Client.CallContractReadFunction.Args.InvalidSchema':
+      console.error('Invalid arguments:', result.error.context);
+      break;
+    case 'Client.CallContractReadFunction.Rpc.Execution.Failed':
+      console.error('Contract execution failed:', result.error.context.message);
+      break;
+    case 'Client.CallContractReadFunction.Timeout':
+      console.error('Request timed out');
+      break;
+    default:
+      console.error('Unknown error:', result.error);
+  }
+}
+```
+
+## Notes
+
+- Read functions don't modify blockchain state
+- No transaction fees are required
+- Execution happens on the RPC node, not on-chain
+- Results are deterministic for a given block height
+- Use `withStateAt` to query historical state
+
+## Related Methods
+
+- [Get Contract State](/api/contract/get-contract-state) - Get raw contract storage state
+- [Send Signed Transaction](/api/transaction/send-signed-transaction) - Execute state-changing transactions

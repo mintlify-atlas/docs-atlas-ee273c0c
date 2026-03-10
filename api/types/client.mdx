@@ -1,0 +1,364 @@
+---
+title: "Client Types"
+description: "TypeScript type definitions for the NEAR client"
+---
+
+Type definitions for the NEAR API client interface and related functionality.
+
+## Client
+
+The main client interface for interacting with the NEAR blockchain.
+
+```typescript
+type Client = {
+  // Account methods
+  getAccountInfo: GetAccountInfo;
+  getAccountAccessKey: GetAccountAccessKey;
+  getAccountAccessKeys: GetAccountAccessKeys;
+  safeGetAccountInfo: SafeGetAccountInfo;
+  safeGetAccountAccessKey: SafeGetAccountAccessKey;
+  safeGetAccountAccessKeys: SafeGetAccountAccessKeys;
+
+  // Contract methods
+  callContractReadFunction: CallContractReadFunction;
+  safeCallContractReadFunction: SafeCallContractReadFunction;
+
+  // Block methods
+  getBlock: GetBlock;
+  safeGetBlock: SafeGetBlock;
+
+  // Transaction methods
+  sendSignedTransaction: SendSignedTransaction;
+  safeSendSignedTransaction: SafeSendSignedTransaction;
+
+  // Cache methods
+  getRecentBlockHash: GetRecentBlockHash;
+  safeGetRecentBlockHash: SafeGetRecentBlockHash;
+};
+```
+
+### Properties
+
+Each method has two variants:
+- **Throwable variant**: Throws errors on failure (e.g., `getAccountInfo`)
+- **Safe variant**: Returns `Result<T, E>` type (e.g., `safeGetAccountInfo`)
+
+## Client Creation
+
+### CreateClient
+
+```typescript
+import { createClient } from '@near-api/universal';
+
+const client = createClient({
+  networkId: 'testnet',
+  rpcEndpoint: 'https://rpc.testnet.near.org'
+});
+```
+
+See [Client Creation](/api/client/create-client) for more details.
+
+## Account Methods
+
+### GetAccountInfo
+
+Retrieve account information.
+
+```typescript
+type GetAccountInfo = (
+  accountId: AccountId,
+  options?: {
+    blockReference?: BlockReference;
+    signal?: AbortSignal;
+  }
+) => Promise<GetAccountInfoOutput>;
+
+type GetAccountInfoOutput = {
+  accountId: AccountId;
+  balance: string;
+  locked: string;
+  codeHash: string;
+  storageUsage: number;
+  storagePaidAt: number;
+  blockHeight: number;
+  blockHash: BlockHash;
+};
+```
+
+**Example:**
+
+```typescript
+const account = await client.getAccountInfo('alice.near');
+console.log('Balance:', account.balance);
+```
+
+### GetAccountAccessKey
+
+Get a specific access key for an account.
+
+```typescript
+type GetAccountAccessKey = (
+  accountId: AccountId,
+  publicKey: PublicKey,
+  options?: {
+    blockReference?: BlockReference;
+    signal?: AbortSignal;
+  }
+) => Promise<GetAccountAccessKeyOutput>;
+```
+
+### GetAccountAccessKeys
+
+Get all access keys for an account.
+
+```typescript
+type GetAccountAccessKeys = (
+  accountId: AccountId,
+  options?: {
+    blockReference?: BlockReference;
+    signal?: AbortSignal;
+  }
+) => Promise<GetAccountAccessKeysOutput>;
+```
+
+## Contract Methods
+
+### CallContractReadFunction
+
+Call a read-only contract function.
+
+```typescript
+type CallContractReadFunction = <R = unknown>(
+  args: {
+    contractId: AccountId;
+    functionName: ContractFunctionName;
+    functionArgs?: MaybeJsonLikeValue;
+    blockReference?: BlockReference;
+    signal?: AbortSignal;
+  } & {
+    options?: {
+      serializeArgs?: BaseSerializeArgsFn;
+      deserializeResult?: BaseDeserializeResultFn<R>;
+    };
+  }
+) => Promise<CallContractReadFunctionOutput<R>>;
+
+type CallContractReadFunctionOutput<R> = {
+  result: R;
+  blockHeight: number;
+  blockHash: BlockHash;
+  logs: string[];
+};
+```
+
+**Example:**
+
+```typescript
+const result = await client.callContractReadFunction({
+  contractId: 'contract.near',
+  functionName: 'get_balance',
+  functionArgs: { account_id: 'alice.near' }
+});
+
+console.log('Result:', result.result);
+```
+
+## Block Methods
+
+### GetBlock
+
+Retrieve block information.
+
+```typescript
+type GetBlock = (
+  blockReference: BlockReference,
+  options?: {
+    signal?: AbortSignal;
+  }
+) => Promise<GetBlockOutput>;
+```
+
+**Example:**
+
+```typescript
+// Get latest block
+const block = await client.getBlock('LatestFinalBlock');
+
+// Get specific block by height
+const block2 = await client.getBlock({ blockHeight: 12345 });
+
+// Get block by hash
+const block3 = await client.getBlock({ 
+  blockHash: 'DkZgMd8T7K3Y...' 
+});
+```
+
+## Transaction Methods
+
+### SendSignedTransaction
+
+Send a signed transaction to the network.
+
+```typescript
+type SendSignedTransaction = (
+  signedTransaction: SignedTransaction,
+  options?: {
+    signal?: AbortSignal;
+  }
+) => Promise<SendSignedTransactionOutput>;
+
+type SendSignedTransactionOutput = {
+  transactionHash: CryptoHash;
+  // ... additional transaction result fields
+};
+```
+
+**Example:**
+
+```typescript
+import { sendSignedTransaction } from '@near-api/universal';
+
+const result = await client.sendSignedTransaction(signedTx);
+console.log('Transaction hash:', result.transactionHash);
+```
+
+## Cache Methods
+
+### GetRecentBlockHash
+
+Get a recent block hash for transaction signing.
+
+```typescript
+type GetRecentBlockHash = (
+  options?: {
+    signal?: AbortSignal;
+  }
+) => Promise<BlockHash>;
+```
+
+**Example:**
+
+```typescript
+const blockHash = await client.getRecentBlockHash();
+```
+
+## Options
+
+### BlockReference
+
+Specify which block to query.
+
+```typescript
+type BlockReference = 
+  | 'LatestOptimisticBlock'  // Latest block (may not be final)
+  | 'LatestNearFinalBlock'   // Near-final block
+  | 'LatestFinalBlock'       // Latest finalized block (recommended)
+  | 'EarliestAvailableBlock' // Earliest available
+  | 'GenesisBlock'           // Genesis block
+  | { blockHash: BlockHash }  // Specific block by hash
+  | { blockHeight: number };  // Specific block by height
+```
+
+### BaseOptions
+
+```typescript
+type BaseOptions = {
+  signal?: AbortSignal; // For request cancellation
+};
+```
+
+**Example:**
+
+```typescript
+const controller = new AbortController();
+
+try {
+  const account = await client.getAccountInfo('alice.near', {
+    signal: controller.signal
+  });
+} catch (error) {
+  if (error.name === 'AbortError') {
+    console.log('Request cancelled');
+  }
+}
+
+// Cancel the request
+controller.abort();
+```
+
+## Error Registry
+
+```typescript
+interface ClientPublicErrorRegistry
+  extends CreateClientPublicErrorRegistry,
+    GetAccountInfoPublicErrorRegistry,
+    GetAccountAccessKeyPublicErrorRegistry,
+    GetAccountAccessKeysPublicErrorRegistry,
+    CallContractReadFunctionPublicErrorRegistry,
+    GetBlockPublicErrorRegistry,
+    GetRecentBlockHashPublicErrorRegistry,
+    SendSignedTransactionPublicErrorRegistry {}
+```
+
+Each method can throw or return errors from its respective error registry.
+
+## Examples
+
+### Basic Client Usage
+
+```typescript
+import { createClient } from '@near-api/universal';
+
+const client = createClient({
+  networkId: 'testnet',
+  rpcEndpoint: 'https://rpc.testnet.near.org'
+});
+
+// Get account info
+const account = await client.getAccountInfo('alice.near');
+
+// Call contract
+const result = await client.callContractReadFunction({
+  contractId: 'contract.near',
+  functionName: 'get_data'
+});
+
+// Get block
+const block = await client.getBlock('LatestFinalBlock');
+```
+
+### Safe Variant Usage
+
+```typescript
+const result = await client.safeGetAccountInfo('alice.near');
+
+if (result.ok) {
+  console.log('Balance:', result.value.balance);
+} else {
+  console.error('Error:', result.error.kind);
+}
+```
+
+### With Abort Signal
+
+```typescript
+const controller = new AbortController();
+const timeout = setTimeout(() => controller.abort(), 5000);
+
+try {
+  const account = await client.getAccountInfo('alice.near', {
+    signal: controller.signal
+  });
+  clearTimeout(timeout);
+} catch (error) {
+  if (error.name === 'AbortError') {
+    console.log('Request timed out');
+  }
+}
+```
+
+## Related
+
+- [Client Creation](/api/client/create-client)
+- [Common Types](/api/types/common)
+- [Transaction Types](/api/types/transaction)

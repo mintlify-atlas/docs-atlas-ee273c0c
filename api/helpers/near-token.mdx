@@ -1,0 +1,209 @@
+---
+title: "NEAR Token Helpers"
+description: "Functions for creating and manipulating NEAR token amounts"
+---
+
+The NEAR token helpers provide convenient functions for working with NEAR token amounts, handling conversions between human-readable NEAR values and yoctoNEAR (the smallest unit).
+
+## Overview
+
+1 NEAR = 10^24 yoctoNEAR
+
+The library provides both "safe" variants (return `Result` types) and "throwable" variants (throw errors) for all functions.
+
+## Functions
+
+### near()
+
+Creates a NearToken from a human-readable NEAR amount.
+
+```typescript
+import { near } from '@near-api/universal';
+
+const token = near('1.5');
+console.log(token.near);        // "1.5"
+console.log(token.yoctoNear);   // 1500000000000000000000000n
+```
+
+**Parameters:**
+- `near` (string): Human-readable NEAR amount with up to 24 decimal places
+
+**Returns:** `NearToken`
+
+**Safe variant:** `safeNear()`
+
+### yoctoNear()
+
+Creates a NearToken from yoctoNEAR (smallest unit).
+
+```typescript
+import { yoctoNear } from '@near-api/universal';
+
+const token = yoctoNear(1500000000000000000000000n);
+console.log(token.near);        // "1.5"
+console.log(token.yoctoNear);   // 1500000000000000000000000n
+```
+
+**Parameters:**
+- `yoctoNear` (bigint | string): Amount in yoctoNEAR
+
+**Returns:** `NearToken`
+
+**Safe variant:** `safeYoctoNear()`
+
+### nearToken()
+
+Creates a NearToken from either NEAR or yoctoNEAR.
+
+```typescript
+import { nearToken } from '@near-api/universal';
+
+// From NEAR
+const token1 = nearToken({ near: '1.5' });
+
+// From yoctoNEAR
+const token2 = nearToken({ yoctoNear: 1500000000000000000000000n });
+```
+
+**Parameters:**
+- `args` (object): Either `{ near: string }` or `{ yoctoNear: bigint | string }`
+
+**Returns:** `NearToken`
+
+**Safe variant:** `safeNearToken()`
+
+### isNearToken()
+
+Type guard to check if a value is a NearToken.
+
+```typescript
+import { isNearToken, near } from '@near-api/universal';
+
+const token = near('1');
+console.log(isNearToken(token)); // true
+```
+
+## NearToken Object
+
+The `NearToken` object provides the following properties and methods:
+
+### Properties
+
+- **`near`** (string): Human-readable NEAR amount (lazy-loaded)
+- **`yoctoNear`** (bigint): Amount in yoctoNEAR (lazy-loaded)
+
+### Methods
+
+#### add()
+
+Add two token amounts.
+
+```typescript
+const token1 = near('1.5');
+const token2 = near('0.5');
+const result = token1.add(token2);
+console.log(result.near); // "2.0"
+```
+
+**Safe variant:** `safeAdd()`
+
+#### sub()
+
+Subtract token amounts.
+
+```typescript
+const token1 = near('2.0');
+const token2 = near('0.5');
+const result = token1.sub(token2);
+console.log(result.near); // "1.5"
+```
+
+**Safe variant:** `safeSub()`
+
+#### gt()
+
+Compare if greater than.
+
+```typescript
+const token1 = near('2.0');
+const token2 = near('1.0');
+console.log(token1.gt(token2)); // true
+```
+
+**Safe variant:** `safeGt()`
+
+#### lt()
+
+Compare if less than.
+
+```typescript
+const token1 = near('1.0');
+const token2 = near('2.0');
+console.log(token1.lt(token2)); // true
+```
+
+**Safe variant:** `safeLt()`
+
+## Type Definitions
+
+See [NearToken Types](/api/types/common#neartoken-types) for complete type information.
+
+## Examples
+
+### Basic Usage
+
+```typescript
+import { near, yoctoNear } from '@near-api/universal';
+
+// Create from NEAR
+const token1 = near('1.5');
+
+// Create from yoctoNEAR
+const token2 = yoctoNear(500000000000000000000000n);
+
+// Perform operations
+const sum = token1.add(token2);
+console.log(sum.near); // "2.0"
+```
+
+### Safe Operations
+
+```typescript
+import { safeNear } from '@near-api/universal';
+
+const result = safeNear('1.5');
+
+if (result.ok) {
+  console.log(result.value.near);
+} else {
+  console.error(result.error);
+}
+```
+
+### Transfer Action
+
+```typescript
+import { near, transfer } from '@near-api/universal';
+
+const action = transfer({
+  amount: { near: '1.5' }
+});
+```
+
+## Validation
+
+The library validates input:
+
+- **NEAR values**: Must be valid decimal strings with up to 24 decimal places
+  - Valid: `"1"`, `"1.5"`, `"0.000000000000000000000001"`
+  - Invalid: `".5"`, `"1."`, `"1.5555555555555555555555555"` (too many decimals)
+
+- **YoctoNEAR values**: Must be non-negative bigint or numeric string
+  - Valid: `1000000n`, `"1000000"`
+  - Invalid: `"abc"`, `-1000n`
+
+## Related
+
+- [NEAR Gas Helpers](/api/helpers/near-gas)
+- [Action Creators](/api/actions)
+- [Common Types](/api/types/common)

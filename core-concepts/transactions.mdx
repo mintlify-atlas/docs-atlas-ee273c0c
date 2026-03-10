@@ -1,0 +1,648 @@
+---
+title: "Transactions"
+description: "Understand transaction structure, actions, and the signing process"
+---
+
+## Overview
+
+A `Transaction` in NEAR represents a single unit of work that modifies the blockchain state. Every transaction consists of metadata (signer, receiver, nonce, block hash) and one or more actions to execute.
+
+## Transaction Structure
+
+### Transaction Type
+
+```typescript
+type Transaction = {
+  signerAccountId: AccountId;
+  signerPublicKey: PublicKey;
+  receiverAccountId: AccountId;
+  nonce: Nonce;
+  blockHash: BlockHash;
+} & (
+  | { action: Action; actions?: never }    // Single action
+  | { action?: never; actions: Action[] }  // Multiple actions
+);
+```
+
+### Transaction Fields
+
+<Accordion title="signerAccountId">
+The account that signs and pays for the transaction.
+
+```typescript
+signerAccountId: 'alice.near'
+```
+</Accordion>
+
+<Accordion title="signerPublicKey">
+The public key of the access key used to sign the transaction. Must correspond to an access key on the signer account.
+
+```typescript
+signerPublicKey: 'ed25519:5FNQFvXMECbW...'
+```
+</Accordion>
+
+<Accordion title="receiverAccountId">
+The account that receives and processes the transaction. For transfers, this is the recipient. For contract calls, this is the contract.
+
+```typescript
+receiverAccountId: 'bob.near'
+```
+</Accordion>
+
+<Accordion title="nonce">
+A unique number that must be greater than the current nonce for the access key. Prevents replay attacks.
+
+```typescript
+nonce: 12345678
+```
+</Accordion>
+
+<Accordion title="blockHash">
+Hash of a recent block (within ~2 minutes). Ensures transaction is processed within a time window.
+
+```typescript
+blockHash: '4hfJMGGE8NQ9xvK3kD3MFqF7...'
+```
+</Accordion>
+
+## Transaction Intent
+
+For simpler transaction construction, use `TransactionIntent`:
+
+```typescript
+type TransactionIntent = {
+  receiverAccountId: AccountId;
+} & (
+  | { action: Action; actions?: never }
+  | { action?: never; actions: Action[] }
+);
+```
+
+The Signer automatically fills in `signerAccountId`, `signerPublicKey`, `nonce`, and `blockHash` when you provide a `TransactionIntent`.
+
+```typescript
+const intent: TransactionIntent = {
+  receiverAccountId: 'bob.near',
+  action: transfer({ amount: near('1') })
+};
+
+// Signer converts intent → Transaction → SignedTransaction
+await signer.executeTransaction({ intent });
+```
+
+## Actions
+
+Actions are the operations performed by a transaction. NEAR supports nine action types:
+
+### Action Type Definition
+
+```typescript
+type Action =
+  | CreateAccountAction
+  | TransferAction
+  | AddFullAccessKeyAction
+  | AddFunctionCallKeyAction
+  | DeployContractAction
+  | FunctionCallAction
+  | StakeAction
+  | DeleteKeyAction
+  | DeleteAccountAction;
+```
+
+### Transfer Action
+
+Transfer NEAR tokens from signer to receiver.
+
+```typescript
+import { transfer, near, yoctoNear } from '@near-api/client';
+
+// Transfer 1 NEAR
+const action1 = transfer({ amount: near('1') });
+
+// Transfer 500 milliNEAR (0.5 NEAR)
+const action2 = transfer({ amount: near('0.5') });
+
+// Transfer exact yoctoNEAR (1 NEAR = 10^24 yoctoNEAR)
+const action3 = transfer({ amount: yoctoNear('1000000000000000000000000') });
+```
+
+**Type definition:**
+```typescript
+type TransferAction = {
+  actionType: 'Transfer';
+  amount: NearTokenArgs;  // String or bigint in yoctoNEAR
+};
+```
+
+### Function Call Action
+
+Call a contract method, optionally with arguments, gas, and attached deposit.
+
+```typescript
+import { functionCall, teraGas, gas, near } from '@near-api/client';
+
+// Simple call without arguments
+const action1 = functionCall({
+  functionName: 'my_method',
+  gasLimit: teraGas('30')
+});
+
+// With JSON arguments (auto-serialized)
+const action2 = functionCall({
+  functionName: 'transfer',
+  functionArgs: {
+    receiver_id: 'bob.near',
+    amount: '1000000'
+  },
+  gasLimit: teraGas('30'),
+  attachedDeposit: near('0')
+});
+
+// Custom serialization
+const action3 = functionCall({
+  functionName: 'custom_method',
+  functionArgs: myCustomData,
+  gasLimit: gas('100000000000000'),
+  options: {
+    serializeArgs: ({ functionArgs }) => {
+      return myCustomSerializer(functionArgs);
+    }
+  }
+});
+```
+
+**Type definition:**
+```typescript
+type FunctionCallAction = {
+  actionType: 'FunctionCall';
+  functionName: string;
+  functionArgs: Uint8Array;       // Serialized arguments
+  gasLimit: NearGasArgs;          // String or bigint in gas units
+  attachedDeposit?: NearTokenArgs; // Optional NEAR deposit
+};
+```
+
+<Note>
+Function arguments are automatically JSON-serialized unless you provide a custom `serializeArgs` function.
+</Note>
+
+### Add Full Access Key
+
+Add a full access key that can perform any action on the account.
+
+```typescript
+import { addFullAccessKey } from '@near-api/client';
+
+const action = addFullAccessKey({
+  publicKey: 'ed25519:5FNQFvXMECbW...'
+});
+```
+
+**Type definition:**
+```typescript
+type AddFullAccessKeyAction = {
+  actionType: 'AddKey';
+  accessType: 'FullAccess';
+  publicKey: PublicKey;
+};
+```
+
+<Card title="Security Warning" icon="exclamation-triangle">
+Full access keys can perform ANY action on the account, including transferring all funds and deleting the account. Use with extreme caution.
+</Card>
+
+### Add Function Call Key
+
+Add a limited access key that can only call specific contract methods.
+
+```typescript
+import { addFunctionCallKey, near } from '@near-api/client';
+
+// Limited to specific contract
+const action1 = addFunctionCallKey({
+  publicKey: 'ed25519:5FNQFvXMECbW...',
+  contractAccountId: 'contract.near'
+});
+
+// Limited to specific methods
+const action2 = addFunctionCallKey({
+  publicKey: 'ed25519:5FNQFvXMECbW...',
+  contractAccountId: 'contract.near',
+  allowedFunctions: ['method1', 'method2']
+});
+
+// With gas budget (allowance)
+const action3 = addFunctionCallKey({
+  publicKey: 'ed25519:5FNQFvXMECbW...',
+  contractAccountId: 'contract.near',
+  gasBudget: near('0.25')  // 0.25 NEAR allowance
+});
+```
+
+**Type definition:**
+```typescript
+type AddFunctionCallKeyAction = {
+  actionType: 'AddKey';
+  accessType: 'FunctionCall';
+  publicKey: PublicKey;
+  contractAccountId: AccountId;
+  gasBudget?: NearTokenArgs;
+  allowedFunctions?: string[];
+};
+```
+
+### Deploy Contract
+
+Deploy WebAssembly contract code to an account.
+
+```typescript
+import { deployContract } from '@near-api/client';
+import { readFile } from 'fs/promises';
+
+const wasmCode = await readFile('./contract.wasm');
+
+const action = deployContract({
+  code: wasmCode
+});
+```
+
+**Type definition:**
+```typescript
+type DeployContractAction = {
+  actionType: 'DeployContract';
+  code: Uint8Array;  // WebAssembly bytecode
+};
+```
+
+### Stake
+
+Stake NEAR tokens to become a validator.
+
+```typescript
+import { stake, near } from '@near-api/client';
+
+const action = stake({
+  amount: near('1000'),  // Minimum varies by network
+  publicKey: 'ed25519:5FNQFvXMECbW...'
+});
+```
+
+**Type definition:**
+```typescript
+type StakeAction = {
+  actionType: 'Stake';
+  amount: NearTokenArgs;
+  publicKey: PublicKey;
+};
+```
+
+### Delete Key
+
+Remove an access key from the account.
+
+```typescript
+import { deleteKey } from '@near-api/client';
+
+const action = deleteKey({
+  publicKey: 'ed25519:5FNQFvXMECbW...'
+});
+```
+
+**Type definition:**
+```typescript
+type DeleteKeyAction = {
+  actionType: 'DeleteKey';
+  publicKey: PublicKey;
+};
+```
+
+### Delete Account
+
+Delete the account and transfer remaining balance to a beneficiary.
+
+```typescript
+import { deleteAccount } from '@near-api/client';
+
+const action = deleteAccount({
+  beneficiaryAccountId: 'alice.near'
+});
+```
+
+**Type definition:**
+```typescript
+type DeleteAccountAction = {
+  actionType: 'DeleteAccount';
+  beneficiaryAccountId: AccountId;
+};
+```
+
+### Create Account
+
+Create a new account (typically used with subaccounts).
+
+```typescript
+import { createAccount } from '@near-api/client';
+
+const action = createAccount();
+```
+
+**Type definition:**
+```typescript
+type CreateAccountAction = {
+  actionType: 'CreateAccount';
+};
+```
+
+<Note>
+Creating an account requires the receiver to be a subaccount of the signer. For example, `alice.near` can create `bob.alice.near`.
+</Note>
+
+## Signed Transactions
+
+After signing, a transaction becomes a `SignedTransaction`:
+
+```typescript
+type SignedTransaction = {
+  transaction: Transaction;
+  transactionHash: CryptoHash;
+  signature: Signature;
+};
+```
+
+### Signing Process
+
+```typescript
+// 1. Create transaction intent
+const intent = {
+  receiverAccountId: 'bob.near',
+  action: transfer({ amount: near('1') })
+};
+
+// 2. Signer builds full transaction
+// - Fetches current nonce
+// - Gets recent block hash
+// - Adds signer account and public key
+
+// 3. KeyService signs the transaction
+const signedTx = await signer.signTransaction({ intent });
+
+// 4. Result contains transaction, hash, and signature
+console.log(signedTx.transaction);      // Full transaction
+console.log(signedTx.transactionHash);  // Base58 hash
+console.log(signedTx.signature);        // Base58 signature
+```
+
+## Multiple Actions
+
+A transaction can include multiple actions that execute atomically:
+
+```typescript
+import { transfer, functionCall, near, teraGas } from '@near-api/client';
+
+await signer.executeTransaction({
+  intent: {
+    receiverAccountId: 'contract.near',
+    actions: [
+      // First: transfer 0.1 NEAR
+      transfer({ amount: near('0.1') }),
+      // Then: call deposit function
+      functionCall({
+        functionName: 'deposit',
+        gasLimit: teraGas('30')
+      })
+    ]
+  }
+});
+```
+
+<Card title="Atomic Execution" icon="link">
+All actions in a transaction execute atomically. If any action fails, the entire transaction is reverted.
+</Card>
+
+### Action Order Matters
+
+Actions execute in the order specified:
+
+```typescript
+// ✅ Correct: Create account, then add key
+actions: [
+  createAccount(),
+  addFullAccessKey({ publicKey: '...' }),
+  transfer({ amount: near('1') })
+]
+
+// ❌ Wrong: Can't add key to non-existent account
+actions: [
+  addFullAccessKey({ publicKey: '...' }),
+  createAccount()
+]
+```
+
+## Complete Transaction Flow
+
+Here's the complete flow from intent to execution:
+
+```typescript
+import {
+  createTestnetClient,
+  createMemoryKeyService,
+  createMemorySigner,
+  transfer,
+  near
+} from '@near-api/client';
+
+// 1. Setup
+const client = createTestnetClient();
+const keyService = createMemoryKeyService({
+  keySource: { privateKey: 'ed25519:...' }
+});
+const signer = createMemorySigner({
+  signerAccountId: 'alice.testnet',
+  client,
+  keyService
+});
+
+// 2. Define intent
+const intent = {
+  receiverAccountId: 'bob.testnet',
+  action: transfer({ amount: near('1') })
+};
+
+// 3. Execute (internally performs all steps)
+const result = await signer.safeExecuteTransaction({ intent });
+
+if (result.ok) {
+  const txResult = result.value;
+  
+  // Transaction outcome
+  console.log(txResult.transaction_outcome.outcome.status);
+  
+  // Receipt outcomes
+  for (const receipt of txResult.receipts_outcome) {
+    console.log(receipt.outcome.status);
+  }
+  
+  // Transaction hash
+  console.log(txResult.transaction.hash);
+}
+```
+
+### Internal Steps
+
+When you call `executeTransaction`, the signer:
+
+1. **Validates intent**: Checks schema and arguments
+2. **Fetches access keys**: Gets account access keys from RPC
+3. **Selects signing key**: Chooses appropriate key from key pool
+4. **Gets nonce**: Fetches and increments nonce for the key
+5. **Gets block hash**: Retrieves recent block hash (cached)
+6. **Builds transaction**: Constructs full transaction object
+7. **Signs transaction**: Uses KeyService to create signature
+8. **Submits transaction**: Sends to network via Client
+9. **Returns result**: Transaction outcome or error
+
+## Native Transaction Format
+
+Internally, transactions are encoded in a binary format for the blockchain:
+
+```typescript
+type NativeTransaction = {
+  signerId: AccountId;
+  publicKey: NativePublicKey;
+  actions: NativeAction[];
+  receiverId: AccountId;
+  nonce: bigint;
+  blockHash: Uint8Array;
+};
+```
+
+The library handles conversion between the developer-friendly types and the binary format using BORSH serialization.
+
+## Token and Gas Helpers
+
+The library provides convenient helpers for working with NEAR tokens and gas:
+
+### NEAR Tokens
+
+```typescript
+import { near, yoctoNear, nearToken } from '@near-api/client';
+
+// Human-readable NEAR amounts
+near('1')       // 1 NEAR
+near('0.5')     // 0.5 NEAR
+near('10.25')   // 10.25 NEAR
+
+// Exact yoctoNEAR (1 NEAR = 10^24 yoctoNEAR)
+yoctoNear('1000000000000000000000000')  // 1 NEAR
+
+// Generic token (accepts both formats)
+nearToken('1')
+nearToken({ near: '1' })
+nearToken({ yoctoNear: '1000000000000000000000000' })
+```
+
+### Gas
+
+```typescript
+import { gas, teraGas, nearGas } from '@near-api/client';
+
+// TGas (1 TGas = 10^12 gas)
+teraGas('30')   // 30 TGas (common for function calls)
+teraGas('300')  // 300 TGas (maximum per transaction)
+
+// Exact gas units
+gas('100000000000000')
+
+// Generic gas
+nearGas('30')
+nearGas({ teraGas: '30' })
+nearGas({ gas: '30000000000000' })
+```
+
+<Note>
+Common gas amounts:
+- Simple transfers: 0 TGas (no execution)
+- View calls: 1-5 TGas
+- Function calls: 30-100 TGas
+- Complex operations: 100-200 TGas
+- Maximum per transaction: 300 TGas
+</Note>
+
+## Transaction Results
+
+A successful transaction returns comprehensive result data:
+
+```typescript
+type SendSignedTransactionOutput = {
+  transaction: {
+    hash: CryptoHash;
+    signer_id: AccountId;
+    receiver_id: AccountId;
+    // ... other fields
+  };
+  transaction_outcome: {
+    outcome: {
+      status: ExecutionStatus;
+      receipt_ids: string[];
+      gas_burnt: number;
+      tokens_burnt: string;
+      // ... other fields
+    };
+  };
+  receipts_outcome: Array<{
+    outcome: {
+      status: ExecutionStatus;
+      receipt_ids: string[];
+      gas_burnt: number;
+      tokens_burnt: string;
+      // ... other fields
+    };
+  }>;
+};
+```
+
+### Checking Transaction Status
+
+```typescript
+const result = await signer.executeTransaction({ intent });
+
+if (result.ok) {
+  const { transaction_outcome } = result.value;
+  
+  if ('SuccessValue' in transaction_outcome.outcome.status) {
+    console.log('Success!');
+  } else if ('Failure' in transaction_outcome.outcome.status) {
+    console.log('Failed:', transaction_outcome.outcome.status.Failure);
+  }
+}
+```
+
+## Best Practices
+
+<Card title="Use Safe Action Creators" icon="shield">
+Always use the safe variants of action creators (`safeTransfer`, `safeFunctionCall`) in production to catch validation errors early.
+</Card>
+
+<Card title="Check Transaction Results" icon="check-circle">
+Always verify the transaction status in the result. A successful RPC response doesn't guarantee the transaction executed successfully.
+</Card>
+
+<Card title="Handle Nonce Conflicts" icon="refresh">
+Use a Signer instead of manually managing nonces. The Signer's TaskQueue prevents nonce conflicts in concurrent scenarios.
+</Card>
+
+<Card title="Set Appropriate Gas Limits" icon="gauge">
+Set gas limits based on actual function complexity. Too low causes failure; too high wastes tokens (only burnt gas is charged).
+</Card>
+
+<Card title="Use Recent Block Hashes" icon="clock">
+Block hashes expire after ~2 minutes. The Client's cache handles this automatically, but manual transaction construction should fetch fresh hashes.
+</Card>
+
+## Related Concepts
+
+- [Clients](/core-concepts/clients) - Submit transactions to the network
+- [Key Services](/core-concepts/key-services) - Sign transactions
+- [Signers](/core-concepts/signers) - High-level transaction execution
+- [Error Handling](/core-concepts/error-handling) - Transaction error handling
