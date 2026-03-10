@@ -223,18 +223,17 @@ const result = await client.sendTransaction({
 ### Import Existing Keys
 
 ```typescript
-import { createFileKeyService } from 'near-api-ts';
-import { parsePrivateKey } from 'near-api-ts/crypto';
+import { createFileKeyService, keyPair } from 'near-api-ts';
 import fs from 'node:fs/promises';
 
 const keyService = createFileKeyService();
 
 // Import key from file or environment
 const privateKeyString = process.env.NEAR_PRIVATE_KEY;
-const keyPair = parsePrivateKey(privateKeyString);
+const keypairObj = keyPair({ privateKey: privateKeyString });
 
-await keyService.addKeyPair(keyPair);
-console.log('Imported key:', keyPair.publicKey);
+await keyService.addKeyPair(keypairObj);
+console.log('Imported key:', keypairObj.publicKey);
 ```
 
 ## File Storage Structure
