@@ -1,0 +1,181 @@
+{
+  "projectType": "sdk-library",
+  "projectName": "NEAR API TypeScript",
+  "projectDescription": "TypeScript library for interactions with NEAR Protocol in the browser or Node.js",
+  "theme": "aspen",
+  "primaryColor": "#6366f1",
+  "lightColor": "#818cf8",
+  "darkColor": "#4f46e5",
+  "navigation": {
+    "tabs": [
+      {
+        "tab": "Documentation",
+        "groups": [
+          {
+            "group": "Getting Started",
+            "pages": [
+              "introduction",
+              "installation",
+              "quickstart"
+            ]
+          },
+          {
+            "group": "Core Concepts",
+            "pages": [
+              "core-concepts/clients",
+              "core-concepts/key-services",
+              "core-concepts/signers",
+              "core-concepts/transactions",
+              "core-concepts/error-handling"
+            ]
+          },
+          {
+            "group": "Guides",
+            "pages": [
+              "guides/reading-blockchain-data",
+              "guides/sending-transactions",
+              "guides/working-with-contracts",
+              "guides/managing-keys",
+              "guides/tokens-and-gas"
+            ]
+          },
+          {
+            "group": "Platform Support",
+            "pages": [
+              "platform/browser",
+              "platform/nodejs",
+              "platform/universal"
+            ]
+          }
+        ]
+      },
+      {
+        "tab": "API Reference",
+        "groups": [
+          {
+            "group": "Client",
+            "pages": [
+              "api/client/overview",
+              "api/client/create-client",
+              "api/client/presets"
+            ]
+          },
+          {
+            "group": "Account Methods",
+            "pages": [
+              "api/account/get-account-info",
+              "api/account/get-access-key",
+              "api/account/get-access-keys"
+            ]
+          },
+          {
+            "group": "Contract Methods",
+            "pages": [
+              "api/contract/call-read-function",
+              "api/contract/get-contract-state"
+            ]
+          },
+          {
+            "group": "Transaction Methods",
+            "pages": [
+              "api/transaction/send-signed-transaction",
+              "api/transaction/get-transaction-status"
+            ]
+          },
+          {
+            "group": "Block Methods",
+            "pages": [
+              "api/block/get-block",
+              "api/block/get-block-hash"
+            ]
+          },
+          {
+            "group": "Key Services",
+            "pages": [
+              "api/key-services/memory-key-service",
+              "api/key-services/file-key-service",
+              "api/key-services/idb-key-service"
+            ]
+          },
+          {
+            "group": "Signers",
+            "pages": [
+              "api/signers/memory-signer",
+              "api/signers/execute-transaction"
+            ]
+          },
+          {
+            "group": "Action Creators",
+            "pages": [
+              "api/actions/transfer",
+              "api/actions/function-call",
+              "api/actions/deploy-contract",
+              "api/actions/create-account",
+              "api/actions/add-key",
+              "api/actions/delete-key",
+              "api/actions/delete-account",
+              "api/actions/stake"
+            ]
+          },
+          {
+            "group": "Helpers",
+            "pages": [
+              "api/helpers/near-token",
+              "api/helpers/near-gas",
+              "api/helpers/key-pair"
+            ]
+          },
+          {
+            "group": "Types",
+            "pages": [
+              "api/types/client",
+              "api/types/transaction",
+              "api/types/crypto",
+              "api/types/common"
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  "keyFeatures": [
+    "Type-safe NEAR Protocol interactions with full TypeScript support",
+    "Multi-platform support (Browser, Node.js, Universal)",
+    "Safe and throwable API variants for flexible error handling",
+    "Built-in key management with multiple storage backends",
+    "Comprehensive transaction building and signing",
+    "Native support for NEAR tokens and gas units",
+    "RPC client with caching and transport policies"
+  ],
+  "publicApiSurface": [
+    "createClient",
+    "createTestnetClient",
+    "createMainnetClient",
+    "createMemoryKeyService",
+    "createMemorySigner",
+    "transfer",
+    "functionCall",
+    "deployContract",
+    "createAccount",
+    "addFullAccessKey",
+    "addFunctionCallKey",
+    "deleteKey",
+    "deleteAccount",
+    "stake",
+    "near",
+    "yoctoNear",
+    "teraGas",
+    "gas",
+    "keyPair",
+    "randomEd25519KeyPair",
+    "randomSecp256k1KeyPair",
+    "isNatError",
+    "Client.getAccountInfo",
+    "Client.getAccountAccessKey",
+    "Client.getAccountAccessKeys",
+    "Client.callContractReadFunction",
+    "Client.getBlock",
+    "Client.sendSignedTransaction",
+    "MemorySigner.executeTransaction"
+  ]
+}
